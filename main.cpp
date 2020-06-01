@@ -76,7 +76,7 @@ void loadMap(uint16_t mapIn)
 {
     sf::FileInputStream file;
 
-    uint8_t buffer8[0xFFFF];
+    uint8_t buffer8[0x10000];
     std::string filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mdt");
     file.open(filePath);
     file.read(buffer8, file.getSize());
