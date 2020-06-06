@@ -15,7 +15,7 @@ enum walkPerm: uint8_t
     };
 };*/
 
-enum gameMode : uint8_t
+enum GameMode : uint8_t
 {
     inGame, walking
 };
@@ -26,6 +26,35 @@ public:
     uint16_t image;
     walkPerm walk;
 };
+
+enum Events: uint8_t
+{
+    null = 0, warp = 1
+};
+
+class Warp
+{
+public:
+    sf::Vector2<uint8_t> pos;
+    uint16_t newMap;
+    sf::Vector2<uint8_t> newPos;
+
+    Warp()
+    {
+        pos = { 0x00, 0x00 };
+        newMap = 0;
+        newPos = { 0x00, 0x00 };
+    }
+
+    Warp(sf::Vector2<uint8_t> posIn, uint16_t newMapIn, sf::Vector2<uint8_t> newPosIn)
+    {
+        pos = posIn;
+        newMap = newMapIn;
+        newPos = newPosIn;
+    }
+};
+
+std::vector<Warp> warps;
 
 class NPC
 {
@@ -70,14 +99,14 @@ sf::Sprite sprite;
 uint8_t keyPressed;
 bool isKeyPressed;
 
-gameMode currentGamemode;
+GameMode currentGamemode;
 
 void loadMap(uint16_t mapIn)
 {
     sf::FileInputStream file;
 
     uint8_t buffer8[0x10000];
-    std::string filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mdt");
+    std::string filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mhd");
     file.open(filePath);
     file.read(buffer8, file.getSize());
     uint8_t width = buffer8[0];
@@ -85,7 +114,7 @@ void loadMap(uint16_t mapIn)
     uint16_t backgroundImage = buffer8[2] + buffer8[3] * 256;
 
     uint16_t buffer16[0x10000];
-    filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".map");
+    filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mti");
     file.open(filePath);
     file.read(buffer16, file.getSize());
 
@@ -107,7 +136,7 @@ void loadMap(uint16_t mapIn)
         }
     }
 
-    filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mwp");
+    filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mmv");
     file.open(filePath);
     file.read(buffer8, file.getSize());
 
@@ -119,12 +148,56 @@ void loadMap(uint16_t mapIn)
             //map[x][y].walk = walk;
         }
     }
+
+    /*warps = std::vector<Warp>(2);
+    warps[0] = Warp({ 1, 0 }, 1, {3, 4});
+    warps[1] = Warp({ 1, 1 }, 1, { 4, 5 });
+    warps.shrink_to_fit();*/
+
+    filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mev");
+    file.open(filePath);
+    file.read(buffer8, file.getSize());
+
+    uint8_t eventCount = file.getSize() / 8;
+
+    warps = std::vector<Warp>(eventCount);
+
+    for (uint8_t x = 0; x < eventCount; x++)
+    {
+        warps[x] = Warp({ buffer8[x * 8], buffer8[x * 8 + 1] }, buffer8[x * 8 + 4] + buffer8[x * 8 + 5] * 256, { buffer8[x * 8 + 6], buffer8[x * 8 + 7] });
+        //warps[x] = buffer8[x * 8];
+    }
+}
+
+void warpPlayer(uint16_t map, sf::Vector2<uint8_t> pos)
+{
+    loadMap(map);
+    player.pos = pos;
+}
+
+void finishWalk()
+{
+    player.walkOffset.x = 0;
+    player.walkOffset.y = 0;
+    currentGamemode = inGame;
+
+    for (uint8_t x = 0; x < warps.size(); x++)
+    {
+        if (warps[x].pos == player.pos)
+        {
+            warpPlayer(warps[x].newMap, warps[x].newPos);
+        }
+    }
 }
 
 int WinMain()
 {
     player = NPC(0x0000, {0, 0});
     currentGamemode = inGame;
+
+    //warps = std::vector<Warp>(1);
+    //warps[0] = Warp({ 1, 0 }, 1, {3, 4});
+    //warps.shrink_to_fit();
 
     for (uint16_t x = 0; x < 256; x++)
     {
@@ -179,6 +252,14 @@ int WinMain()
         switch (currentGamemode)
         {
         case inGame:
+            /*for (uint8_t x = 0; x < warps.size(); x++)
+            {
+                if (warps[x].pos == player.pos)
+                {
+                    warpPlayer(warps[x].newMap, warps[x].newPos);
+                }
+            }*/
+
             if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
             {
                 player.direction = 0;
@@ -190,7 +271,7 @@ int WinMain()
                 }
             }
 
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))
             {
                 player.direction = 3;
                 if (map[player.pos.x - 1][player.pos.y].walk == walk)
@@ -199,7 +280,7 @@ int WinMain()
                 }
             }
 
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
             {
                 player.direction = 2;
                 if (map[player.pos.x][player.pos.y + 1].walk == walk)
@@ -208,13 +289,21 @@ int WinMain()
                 }
             }
 
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
             {
                 player.direction = 1;
                 if (map[player.pos.x + 1][player.pos.y].walk == walk)
                 {
                     currentGamemode = walking;
                 }
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F1))
+            {
+                warpPlayer(0, {0, 0});
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F2))
+            {
+                warpPlayer(1, { 0, 0 });
             }
             break;
         case walking:
@@ -224,36 +313,32 @@ int WinMain()
                 player.walkOffset.y--;
                 if (player.walkOffset.y <= -16)
                 {
-                    player.walkOffset.y = 0;
                     player.pos.y--;
-                    currentGamemode = inGame;
+                    finishWalk();
                 }
                 break;
             case 1:
                 player.walkOffset.x++;
                 if (player.walkOffset.x >= 16)
                 {
-                    player.walkOffset.x = 0;
                     player.pos.x++;
-                    currentGamemode = inGame;
+                    finishWalk();
                 }
                 break;
             case 2:
                 player.walkOffset.y++;
                 if (player.walkOffset.y >= 16)
                 {
-                    player.walkOffset.y = 0;
                     player.pos.y++;
-                    currentGamemode = inGame;
+                    finishWalk();
                 }
                 break;
             case 3:
                 player.walkOffset.x--;
                 if (player.walkOffset.x <= -16)
                 {
-                    player.walkOffset.x = 0;
                     player.pos.x--;
-                    currentGamemode = inGame;
+                    finishWalk();
                 }
                 break;
             }
