@@ -1,17 +1,47 @@
 #include <SFML/Graphics.hpp>
-#include <fstream>
 
-enum EditingMode: uint8_t
+sf::RectangleShape rectangle;
+sf::Vector2<uint8_t> mapSize;
+
+class MapConnection
 {
-    tiles = 0, movement
+public:
+    uint16_t mapID;
+    uint8_t offset;
+    sf::Vector2<uint8_t> mapSize;
+
+    MapConnection()
+    {
+        mapID = 0;
+        offset = 0;
+        mapSize = { 0, 0 };
+    }
+
+    MapConnection(uint16_t mapIDIn, uint8_t offsetIn)
+    {
+        mapID = mapIDIn;
+        offset = offsetIn;
+        mapSize = {0, 0};
+    }
 };
-EditingMode editingMode;
+MapConnection mapConnections[4];
+
+enum Overlay: uint8_t
+{
+    none = 0, movement
+};
+Overlay overlay;
 
 enum MovementPerm: uint8_t
 {
     noWalk = 0, walk = 1
 };
-MovementPerm movementPen;
+
+enum GameMode: uint8_t
+{
+    inGame = 0, walking, warpingFadeOut, warpingFadeIn
+};
+uint8_t fadeCounter;
 
 class MapTile
 {
@@ -20,44 +50,114 @@ public:
     MovementPerm movement;
 };
 
-sf::RectangleShape rectangle;
+enum Events: uint8_t
+{
+    null = 0, warp = 1
+};
+
+class Warp
+{
+public:
+    sf::Vector2<uint8_t> pos;
+    uint16_t newMap;
+    sf::Vector2<uint8_t> newPos;
+
+    Warp()
+    {
+        pos = { 0x00, 0x00 };
+        newMap = 0;
+        newPos = { 0x00, 0x00 };
+    }
+
+    Warp(sf::Vector2<uint8_t> posIn, uint16_t newMapIn, sf::Vector2<uint8_t> newPosIn)
+    {
+        pos = posIn;
+        newMap = newMapIn;
+        newPos = newPosIn;
+    }
+};
+
+std::vector<Warp> warps;
+uint8_t mapWarpingTo;
+
+class NPC
+{
+public:
+    sf::Vector2<uint8_t> pos = { 0x00, 0x00 };
+    sf::Vector2<int8_t> walkOffset = { 0x00, 0x00 };
+    uint8_t direction;
+    uint16_t image;
+
+    NPC()
+    {
+        image = 0x0000;
+        pos = { 0x00, 0x00 };
+        walkOffset = { 0x00, 0x00 };
+        direction = 0x00;
+    }
+
+    NPC(uint16_t imageIn, sf::Vector2<uint8_t> posIn)
+    {
+        image = imageIn;
+        pos = posIn;
+        walkOffset = { 0x00, 0x00 };
+        direction = 0x00;
+    }
+};
+
+sf::Vector2<uint16_t> screenRes;
+double screenAspectRatio;
+int16_t screenOffset;
+uint64_t time_ = 0;
+
+NPC player;
+MapTile map[0x100][0x100];
 
 sf::Texture textures;
 sf::Sprite sprite;
-MapTile map[0x100][0x100];
 
-sf::Vector2<uint8_t> size;
-uint8_t scale = 2;
-
-uint16_t pen;
-uint16_t mapID;
+uint8_t keyPressed;
+bool isKeyPressed;
+GameMode gameMode;
 
 void loadMap(uint16_t mapIn)
 {
     sf::FileInputStream file;
-
+    std::string mapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256);
     uint8_t buffer8[0x10000];
-    std::string filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mhd");
+    uint16_t buffer16[0x10000];
+
+    std::string filePath = mapPath + std::string(".mhd");
     file.open(filePath);
     file.read(buffer8, file.getSize());
     uint8_t width = buffer8[0];
     uint8_t height = buffer8[1];
-    size = { width, height };
+    mapSize = { width, height };
+    uint16_t backgroundImage = buffer8[2] + buffer8[3] * 256;
 
-    uint16_t buffer16[0x10000];
-    filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mti");
+    filePath = mapPath + std::string(".mti");
     file.open(filePath);
     file.read(buffer16, file.getSize());
+
+    for (uint16_t x = 0; x < 256; x++)
+    {
+        for (uint16_t y = 0; y < 256; y++)
+        {
+            map[x][y].image = backgroundImage;
+            map[x][y].movement = noWalk;
+        }
+    }
 
     for (uint16_t x = 0; x < width; x++)
     {
         for (uint16_t y = 0; y < height; y++)
         {
             map[x][y].image = buffer16[x + width * y];
+            map[x][y].movement = walk;
         }
     }
 
-    filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mmv");
+    filePath = mapPath + std::string(".mmv");
     file.open(filePath);
     file.read(buffer8, file.getSize());
 
@@ -68,112 +168,251 @@ void loadMap(uint16_t mapIn)
             map[x][y].movement = (MovementPerm)buffer8[x + width * y];
         }
     }
+
+    filePath = mapPath + std::string(".mev");
+    file.open(filePath);
+    file.read(buffer8, file.getSize());
+    uint8_t eventCount = file.getSize() / 8;
+    warps = std::vector<Warp>(eventCount);
+    for (uint8_t x = 0; x < eventCount; x++)
+    {
+        warps[x] = Warp({ buffer8[x * 8], buffer8[x * 8 + 1] }, buffer8[x * 8 + 4] + buffer8[x * 8 + 5] * 256, { buffer8[x * 8 + 6], buffer8[x * 8 + 7] });
+    }
+
+    filePath = mapPath + std::string(".mcn");
+    file.open(filePath);
+    file.read(buffer8, file.getSize());
+
+    for (uint8_t x = 0; x < 4; x++)
+    {
+        mapConnections[x] = MapConnection(buffer8[x * 4] + buffer8[x * 4 + 1] * 256, buffer8[x * 4 + 2]);
+    }
+
+    std::string connectionMapPath;
+
+    if (mapConnections[1].mapID != 0xFFFF)
+    {
+        connectionMapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapConnections[1].mapID / 256)) + std::string("/") + std::to_string((uint8_t)mapConnections[1].mapID % 256);
+        file.open(connectionMapPath + std::string(".mhd"));
+        file.read(buffer8, file.getSize());
+        uint8_t connectionWidth = buffer8[0];
+        uint8_t connectionHeight = buffer8[1];
+
+        uint8_t visableConnectionWidth = connectionWidth;
+
+        if (visableConnectionWidth > 17)
+        {
+            visableConnectionWidth = 17;
+        }
+
+        file.open(connectionMapPath + std::string(".mti"));
+        file.read(buffer16, file.getSize());
+
+        for (uint8_t x = 0; x < visableConnectionWidth; x++)
+        {
+            for (uint8_t y = 0; y < connectionHeight; y++)
+            {
+                map[x + width][(uint8_t)(y + mapConnections[1].offset)].image = buffer16[x + connectionWidth * y];
+            }
+        }
+
+        file.open(connectionMapPath + std::string(".mmv"));
+        file.read(buffer8, file.getSize());
+
+        for (uint8_t y = 0; y < connectionHeight; y++)
+        {
+            map[width][(uint8_t)(y + mapConnections[1].offset)].movement = (MovementPerm)buffer8[connectionWidth * y];
+        }
+    }
+
+    if (mapConnections[2].mapID != 0xFFFF)
+    {
+        connectionMapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapConnections[2].mapID / 256)) + std::string("/") + std::to_string((uint8_t)mapConnections[2].mapID % 256);
+        file.open(connectionMapPath + std::string(".mhd"));
+        file.read(buffer8, file.getSize());
+        uint8_t connectionWidth = buffer8[0];
+        uint8_t connectionHeight = buffer8[1];
+
+        uint8_t visableConnectionHeight = connectionHeight;
+
+        if (visableConnectionHeight > 9)
+        {
+            visableConnectionHeight = 9;
+        }
+
+        file.open(connectionMapPath + std::string(".mti"));
+        file.read(buffer16, file.getSize());
+
+        for (uint8_t x = 0; x < connectionWidth; x++)
+        {
+            for (uint8_t y = 0; y < visableConnectionHeight; y++)
+            {
+                map[(uint8_t)(x + mapConnections[2].offset)][y + height].image = buffer16[x + connectionWidth * y];
+            }
+        }
+
+        file.open(connectionMapPath + std::string(".mmv"));
+        file.read(buffer8, file.getSize());
+
+        for (uint8_t x = 0; x < connectionWidth; x++)
+        {
+            map[(uint8_t)(x + mapConnections[2].offset)][height].movement = (MovementPerm)buffer8[x];
+        }
+    }
+
+    if (mapConnections[0].mapID != 0xFFFF)
+    {
+        connectionMapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapConnections[0].mapID / 256)) + std::string("/") + std::to_string((uint8_t)mapConnections[0].mapID % 256);
+        file.open(connectionMapPath + std::string(".mhd"));
+        file.read(buffer8, file.getSize());
+        uint8_t connectionWidth = buffer8[0];
+        uint8_t connectionHeight = buffer8[1];
+
+        mapConnections[0].mapSize = { connectionWidth, connectionHeight };
+
+        uint8_t visableConnectionHeight = connectionHeight;
+
+        if (visableConnectionHeight > 9)
+        {
+            visableConnectionHeight = 9;
+        }
+
+        file.open(connectionMapPath + std::string(".mti"));
+        file.read(buffer16, file.getSize());
+
+        for (uint8_t x = 0; x < connectionWidth; x++)
+        {
+            for (uint8_t y = 0; y < visableConnectionHeight; y++)
+            {
+                map[(uint8_t)(x + mapConnections[0].offset)][(uint8_t)(y + (0 - visableConnectionHeight))].image = buffer16[x + connectionWidth * (y + (connectionHeight - visableConnectionHeight))];
+            }
+        }
+
+        file.open(connectionMapPath + std::string(".mmv"));
+        file.read(buffer8, file.getSize());
+
+        for (uint8_t x = 0; x < connectionWidth; x++)
+        {
+            map[(uint8_t)(x + mapConnections[0].offset)][255].movement = (MovementPerm)buffer8[(connectionWidth * (connectionHeight - 1)) + x];
+        }
+    }
+
+    if (mapConnections[3].mapID != 0xFFFF)
+    {
+        connectionMapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapConnections[3].mapID / 256)) + std::string("/") + std::to_string((uint8_t)mapConnections[3].mapID % 256);
+        file.open(connectionMapPath + std::string(".mhd"));
+        file.read(buffer8, file.getSize());
+        uint8_t connectionWidth = buffer8[0];
+        uint8_t connectionHeight = buffer8[1];
+
+        mapConnections[3].mapSize = { connectionWidth, connectionHeight };
+
+        uint8_t visableConnectionWidth = connectionWidth;
+
+        if (visableConnectionWidth > 17)
+        {
+            visableConnectionWidth = 17;
+        }
+
+        file.open(connectionMapPath + std::string(".mti"));
+        file.read(buffer16, file.getSize());
+
+        for (uint8_t x = 0; x < visableConnectionWidth; x++)
+        {
+            for (uint8_t y = 0; y < connectionHeight; y++)
+            {
+                map[(uint8_t)((x + (connectionWidth - visableConnectionWidth)) + (0 - connectionWidth))][(uint8_t)(y + mapConnections[3].offset)].image = buffer16[(x + (connectionWidth - visableConnectionWidth)) + connectionWidth * y];
+            }
+        }
+
+        file.open(connectionMapPath + std::string(".mmv"));
+        file.read(buffer8, file.getSize());
+
+        for (uint8_t y = 0; y < connectionHeight; y++)
+        {
+            map[255][(uint8_t)(y + mapConnections[3].offset)].movement = (MovementPerm)buffer8[(uint16_t)((connectionWidth - 1) + (connectionWidth * y))];//(MovementPerm)buffer8[(connectionWidth - 1) + (connectionWidth * y)];
+        }
+    }
 }
 
-void saveMap(uint16_t mapIn)
+void warpPlayer(uint16_t map, sf::Vector2<uint8_t> pos)
 {
-    std::string filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mti");
-    std::ofstream file(filePath, std::ios::binary);//std::ofstream
-
-    uint16_t fileSize = size.x * size.y * 2;
-    std::vector<uint8_t> out(fileSize);
-    char memBlock[0x100];
-
-    for (uint16_t x = 0; x < size.x; x++)
-    {
-        for (uint16_t y = 0; y < size.y; y++)
-        {
-            out[(x + (uint32_t)size.x * y) * 2] = map[x][y].image % 256;
-            out[(x + (uint32_t)size.x * y) * 2 + 1] = floor(map[x][y].image / 256);
-        }
-    }
-
-    for (uint64_t x = 0; x < fileSize; x += 0x100)
-    {
-        if (0x100 <= fileSize - x)
-        {
-            for (uint64_t y = 0; y < 0x100; y++)
-            {
-                memBlock[y] = out[x + y];
-            }
-            file.write(memBlock, 0x100);
-        }
-
-        else
-        {
-            for (uint64_t y = 0; y < fileSize - x; y++)
-            {
-                memBlock[y] = out[x + y];
-            }
-            file.write(memBlock, fileSize - x);
-        }
-    }
-
-    file.close();
-
-    filePath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256) + std::string(".mmv");
-    file = std::ofstream(filePath, std::ios::binary);
-    fileSize = size.x * size.y;
-
-    out = std::vector<uint8_t>(fileSize);
-    //char memBlock[0x100];
-
-    for (uint16_t x = 0; x < size.x; x++)
-    {
-        for (uint16_t y = 0; y < size.y; y++)
-        {
-            out[(x + (uint32_t)size.x * y)] = map[x][y].movement % 256;
-        }
-    }
-
-    for (uint64_t x = 0; x < fileSize; x += 0x100)
-    {
-        if (0x100 <= fileSize - x)
-        {
-            for (uint64_t y = 0; y < 0x100; y++)
-            {
-                memBlock[y] = out[x + y];
-            }
-            file.write(memBlock, 0x100);
-        }
-
-        else
-        {
-            for (uint64_t y = 0; y < fileSize - x; y++)
-            {
-                memBlock[y] = out[x + y];
-            }
-            file.write(memBlock, fileSize - x);
-        }
-    }
+    loadMap(map);
+    player.pos = pos;
 }
 
-sf::Vector2<uint16_t> windowSize(2000, 1500);
+void finishWalk()
+{
+    player.walkOffset.x = 0;
+    player.walkOffset.y = 0;
+    gameMode = inGame;
+
+    for (uint8_t x = 0; x < warps.size(); x++)
+    {
+        if (warps[x].pos == player.pos)
+        {
+            gameMode = warpingFadeOut;
+            fadeCounter = 0;
+            mapWarpingTo = x;
+        }
+    }
+
+    if (player.pos.y == 255)
+    {
+        warpPlayer(mapConnections[0].mapID, { (uint8_t)(player.pos.x - mapConnections[0].offset), (uint8_t)(mapConnections[0].mapSize.y - 1) });
+    }
+
+    if (player.pos.x == mapSize.x)
+    {
+        warpPlayer(mapConnections[1].mapID, {0, (uint8_t)(player.pos.y - mapConnections[1].offset)});
+    }
+
+    if (player.pos.y == mapSize.y)
+    {
+        warpPlayer(mapConnections[2].mapID, { (uint8_t)(player.pos.x - mapConnections[2].offset), 0 });
+    }
+
+    if (player.pos.x == 255)
+    {
+        warpPlayer(mapConnections[3].mapID, { (uint8_t)(mapConnections[3].mapSize.x - 1), (uint8_t)(player.pos.y - mapConnections[3].offset) });
+    }
+}
 
 int WinMain()
 {
-    movementPen = noWalk;
-    editingMode = tiles;
+    player = NPC(0x0000, {0, 0});
+    gameMode = inGame;
 
-    uint64_t time = 0;
-    pen = 0;
-    
-    loadMap(0);
+    for (uint16_t x = 0; x < 256; x++)
+    {
+        for (uint16_t y = 0; y < 256; y++)
+        {
+            map[x][y].image = 0;
+            if (x == y || x == 0 || y == 0)
+            {
+                map[x][y].image = 0;
+            }
+        }
+    }
 
-    sf::RenderWindow window(sf::VideoMode(windowSize.x, windowSize.y), "RPG Layout Editor");
-    window.setVerticalSyncEnabled(true);
+    loadMap(2);
+    player.pos = { 4, 4 };
+
+    sf::RenderWindow window(sf::VideoMode(512, 256), "RPG", sf::Style::Fullscreen);
     window.setFramerateLimit(60);
+    window.setVerticalSyncEnabled(true);
+    screenRes = sf::Vector2<uint16_t>(window.getSize());
+
+    screenAspectRatio = (double)screenRes.x / (double)screenRes.y;
+    screenOffset = (screenRes.x - (screenRes.y * 2)) / 2;
 
     textures.loadFromFile("assets/textures/textures.png");
+
     sprite.setTexture(textures);
-
-    editingMode = tiles;
-
-    //size = {10, 12};
 
     while (window.isOpen())
     {
-        time++;
+        isKeyPressed = false;
 
         sf::Event event;
         while (window.pollEvent(event))
@@ -183,107 +422,150 @@ int WinMain()
             case sf::Event::Closed:
                 window.close();
                 break;
-            /*case sf::Event::MouseButtonPressed:
-                switch (editingMode)
-                {
-                case tiles:
-                    map[sf::Mouse::getPosition(window).x / 16 / scale][sf::Mouse::getPosition(window).y / 16 / scale].image = pen;
-                    break;
-                case movement:
-                    map[sf::Mouse::getPosition(window).x / 16 / scale][sf::Mouse::getPosition(window).y / 16 / scale].movement = movementPen;
-                    break;
-                }
-                break;*/
-            case sf::Event::KeyReleased:
-                switch (event.key.code)
-                {
-                case sf::Keyboard::L:
-                    loadMap(mapID);
-                    break;
-                case sf::Keyboard::S:
-                    saveMap(mapID);
-                    break;
-                case sf::Keyboard::Equal:
-                    mapID++;
-                    break;
-                case sf::Keyboard::Hyphen:
-                    mapID--;
-                    break;
-                case sf::Keyboard::Up:
-                    pen++;
-                    break;
-                case sf::Keyboard::Down:
-                    pen--;
-                    break;
-                case sf::Keyboard::Left:
-                    pen -= 256;
-                    break;
-                case sf::Keyboard::Right:
-                    pen += 256;
-                    break;
-                case sf::Keyboard::F5:
-                    editingMode = tiles;
-                    break;
-                case sf::Keyboard::F6:
-                    editingMode = movement;
-                    break;
-                case sf::Keyboard::F9:
-                    movementPen = noWalk;
-                    break;
-                case sf::Keyboard::F10:
-                    movementPen = walk;
-                    break;
-                }
+            case sf::Event::KeyPressed:
                 break;
             }
         }
 
-        if (sf::Mouse::isButtonPressed(sf::Mouse::Left))
+        switch (gameMode)
         {
-            if (sf::Mouse::getPosition(window).x > windowSize.x - 256)
+        case inGame:
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
             {
-                if (sf::Mouse::getPosition(window).y > 255 && sf::Mouse::getPosition(window).y < 512)
+                player.direction = 0;
+                if (map[player.pos.x][(uint8_t)(player.pos.y - 1)].movement == walk)
                 {
-                    pen = floor(pen / 256.) * 256 + floor((sf::Mouse::getPosition(window).x - windowSize.x + 256) / 16) + floor((sf::Mouse::getPosition(window).y - 256) / 16) * 16;
-                }
-                else if (sf::Mouse::getPosition(window).y < 256)
-                {
-                    pen = (pen % 256) + floor((sf::Mouse::getPosition(window).x - windowSize.x + 256) / 16) * 256 + floor((sf::Mouse::getPosition(window).y) / 16) * 4096;
+                    gameMode = walking;
                 }
             }
-            else
+
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))
             {
-                switch (editingMode)
+                player.direction = 3;
+                if (map[(uint8_t)(player.pos.x - 1)][player.pos.y].movement == walk)
                 {
-                case tiles:
-                    map[sf::Mouse::getPosition(window).x / 16 / scale][sf::Mouse::getPosition(window).y / 16 / scale].image = pen;
-                    break;
-                case movement:
-                    map[sf::Mouse::getPosition(window).x / 16 / scale][sf::Mouse::getPosition(window).y / 16 / scale].movement = movementPen;
-                    break;
+                    gameMode = walking;
                 }
             }
+
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
+            {
+                player.direction = 2;
+                if (map[player.pos.x][player.pos.y + 1].movement == walk)
+                {
+                    gameMode = walking;
+                }
+            }
+
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
+            {
+                player.direction = 1;
+                if (map[player.pos.x + 1][player.pos.y].movement == walk)
+                {
+                    gameMode = walking;
+                }
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F1))
+            {
+                warpPlayer(0, {0, 0});
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F2))
+            {
+                warpPlayer(1, { 0, 0 });
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F5))
+            {
+                overlay = none;
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F6))
+            {
+                overlay = movement;
+            }
+            break;
+        case walking:
+            switch (player.direction)
+            {
+            case 0:
+                player.walkOffset.y--;
+                if (player.walkOffset.y <= -16)
+                {
+                    player.pos.y--;
+                    finishWalk();
+                }
+                break;
+            case 1:
+                player.walkOffset.x++;
+                if (player.walkOffset.x >= 16)
+                {
+                    player.pos.x++;
+                    finishWalk();
+                }
+                break;
+            case 2:
+                player.walkOffset.y++;
+                if (player.walkOffset.y >= 16)
+                {
+                    player.pos.y++;
+                    finishWalk();
+                }
+                break;
+            case 3:
+                player.walkOffset.x--;
+                if (player.walkOffset.x <= -16)
+                {
+                    player.pos.x--;
+                    finishWalk();
+                }
+                break;
+            }
+            break;
+        case warpingFadeOut:
+            if (fadeCounter >= 240)
+            {
+                fadeCounter = 255;
+                warpPlayer(warps[mapWarpingTo].newMap, warps[mapWarpingTo].newPos);
+                gameMode = warpingFadeIn;
+                break;
+            }
+
+            fadeCounter += 16;
+            break;
+        case warpingFadeIn:
+            if (fadeCounter <= 15)
+            {
+                fadeCounter = 0;
+                gameMode = inGame;
+                break;
+            }
+            fadeCounter -= 16;
+            break;
         }
+
+        // Draw
 
         window.clear();
 
-        sprite.setScale(scale, scale);
-        rectangle.setSize(sf::Vector2f(scale * 16, scale * 16));
+        rectangle.setPosition(0, 0);
+        rectangle.setSize((sf::Vector2f)screenRes);
+        rectangle.setFillColor(sf::Color::Black);
+        window.draw(rectangle);
 
-        for (uint16_t x = 0; x < size.x; x++)
+        sprite.setScale((double)screenRes.y / 256, (double)screenRes.y / 256);
+        rectangle.setSize(sf::Vector2f(screenRes.y / 16, screenRes.y / 16));
+        for (int8_t x = -1; x < 33; x++)
         {
-            for (uint16_t y = 0; y < size.y; y++)
+            for (int8_t y = -1; y < 17; y++)
             {
-                sprite.setPosition(x * 16 * scale, y * 16 * scale);
-                uint16_t image = map[x][y].image;//map[x][y].image
+                uint16_t image = map[(uint8_t)(x - 16 + player.pos.x)][(uint8_t)(y - 8 + player.pos.y)].image;
                 sprite.setTextureRect(sf::Rect<int>((image % 256) % 16 * 16 + (floor((image % 4096) / 256) * 256), floor((image % 256) / 16) * 16 + floor(image / 4096) * 256, 16, 16));
-
+                rectangle.setPosition((x - ((double)player.walkOffset.x / 16))* (screenRes.y / 16) + screenOffset, (y - ((double)player.walkOffset.y / 16))* (screenRes.y / 16));
+                sprite.setPosition((x - ((double)player.walkOffset.x / 16)) * (screenRes.y / 16) + screenOffset, (y - ((double)player.walkOffset.y / 16)) * (screenRes.y / 16));
                 window.draw(sprite);
-
-                if (editingMode == movement)
+                switch (overlay)
                 {
+                case movement:
                     rectangle.setFillColor(sf::Color(255, 255, 0, 127));
-                    switch (map[x][y].movement)
+                    switch (map[(uint8_t)(x - 16 + player.pos.x)][(uint8_t)(y - 8 + player.pos.y)].movement)
                     {
                     case noWalk:
                         rectangle.setFillColor(sf::Color(255, 0, 0, 127));
@@ -292,42 +574,32 @@ int WinMain()
                         rectangle.setFillColor(sf::Color(0, 255, 0, 127));
                         break;
                     }
-
-                    rectangle.setPosition(x * 16 * scale, y * 16 * scale);
+                    break;
+                }
+                if (overlay != none)
+                {
                     window.draw(rectangle);
                 }
             }
         }
 
-        rectangle.setPosition(windowSize.x - 256, 0);
-        rectangle.setSize({ 256, 512 });
-        rectangle.setFillColor({127, 127, 127, 255});
-        window.draw(rectangle);
-
-        sprite.setScale(1. / 16., 1. / 16.);
-        sprite.setPosition(windowSize.x - 256, 0);
-        sprite.setTextureRect(sf::Rect<int>(0, 0, 4096, 4096));
+        uint16_t image = 256 + player.direction;
+        sprite.setTextureRect(sf::Rect<int>((image % 256) % 16 * 16 + (floor((image % 4096) / 256) * 256), floor((image % 256) / 16) * 16 + floor(image / 4096) * 256, 16, 16));
+        sprite.setPosition(16 * (screenRes.y / 16) + screenOffset, 8 * (screenRes.y / 16));
         window.draw(sprite);
 
-        sprite.setScale(1, 1);
-        sprite.setPosition(windowSize.x - 256, 256);
-        sprite.setTextureRect(sf::Rect<int>(floor((pen % 4096) / 256.) * 256, floor(pen / 4096.) * 256, 256, 256));
-        window.draw(sprite);
-
-        rectangle.setPosition(windowSize.x - 256 + floor(pen % 4096 / 256) * 16, floor(pen / 4096) * 16);
-        rectangle.setSize({ 16, 16 });
-        rectangle.setFillColor({ 255, 255, 0, 127 });
-        window.draw(rectangle);
-
-        rectangle.setPosition(windowSize.x - 256 + pen % 16 * 16, 256 + floor((pen % 256) / 16.) * 16);
-        window.draw(rectangle);
+        if (gameMode == warpingFadeOut || gameMode == warpingFadeIn)
+        {
+            rectangle.setPosition(0, 0);
+            rectangle.setSize((sf::Vector2f)screenRes);
+            rectangle.setFillColor(sf::Color(0, 0, 0, fadeCounter));
+            window.draw(rectangle);
+        }
 
         window.display();
+
+        time_++;
     }
-
-    //uint16_t image = map[(uint8_t)(x - 16 + player.pos.x)][(uint8_t)(y - 8 + player.pos.y)].image;
-
-    //sprite.setTextureRect(sf::Rect<int>((image % 256) % 16 * 16 + (floor((image % 4096) / 256) * 256), floor((image % 256) / 16) * 16 + floor(image / 4096) * 256, 16, 16));
 
     return 0;
 }
