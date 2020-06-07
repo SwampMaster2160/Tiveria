@@ -2,7 +2,13 @@
 
 sf::RectangleShape rectangle;
 
-enum walkPerm: uint8_t
+enum Overlay: uint8_t
+{
+    none = 0, movement
+};
+Overlay overlay;
+
+enum MovementPerm: uint8_t
 {
     noWalk = 0, walk = 1
 };
@@ -15,16 +21,17 @@ enum walkPerm: uint8_t
     };
 };*/
 
-enum GameMode : uint8_t
+enum GameMode: uint8_t
 {
-    inGame, walking
+    inGame = 0, walking, warpingFadeOut, warpingFadeIn
 };
+uint8_t fadeCounter;
 
 class MapTile
 {
 public:
     uint16_t image;
-    walkPerm walk;
+    MovementPerm movement;
 };
 
 enum Events: uint8_t
@@ -55,6 +62,7 @@ public:
 };
 
 std::vector<Warp> warps;
+uint8_t mapWarpingTo;
 
 class NPC
 {
@@ -99,7 +107,7 @@ sf::Sprite sprite;
 uint8_t keyPressed;
 bool isKeyPressed;
 
-GameMode currentGamemode;
+GameMode gameMode;
 
 void loadMap(uint16_t mapIn)
 {
@@ -123,7 +131,7 @@ void loadMap(uint16_t mapIn)
         for (uint16_t y = 0; y < 256; y++)
         {
             map[x][y].image = backgroundImage;
-            map[x][y].walk = noWalk;
+            map[x][y].movement = noWalk;
         }
     }
 
@@ -132,7 +140,7 @@ void loadMap(uint16_t mapIn)
         for (uint16_t y = 0; y < height; y++)
         {
             map[x][y].image = buffer16[x + width * y];
-            map[x][y].walk = walk;
+            map[x][y].movement = walk;
         }
     }
 
@@ -144,7 +152,7 @@ void loadMap(uint16_t mapIn)
     {
         for (uint16_t y = 0; y < height; y++)
         {
-            map[x][y].walk = (walkPerm)buffer8[x + width * y];
+            map[x][y].movement = (MovementPerm)buffer8[x + width * y];
             //map[x][y].walk = walk;
         }
     }
@@ -179,13 +187,16 @@ void finishWalk()
 {
     player.walkOffset.x = 0;
     player.walkOffset.y = 0;
-    currentGamemode = inGame;
+    gameMode = inGame;
 
     for (uint8_t x = 0; x < warps.size(); x++)
     {
         if (warps[x].pos == player.pos)
         {
-            warpPlayer(warps[x].newMap, warps[x].newPos);
+            gameMode = warpingFadeOut;
+            fadeCounter = 0;
+            mapWarpingTo = x;
+            //warpPlayer(warps[x].newMap, warps[x].newPos);
         }
     }
 }
@@ -193,7 +204,7 @@ void finishWalk()
 int WinMain()
 {
     player = NPC(0x0000, {0, 0});
-    currentGamemode = inGame;
+    gameMode = inGame;
 
     //warps = std::vector<Warp>(1);
     //warps[0] = Warp({ 1, 0 }, 1, {3, 4});
@@ -211,7 +222,8 @@ int WinMain()
         }
     }
 
-    loadMap(0);
+    loadMap(2);
+    player.pos = { 4, 4 };
 
     sf::RenderWindow window(sf::VideoMode(512, 256), "RPG", sf::Style::Fullscreen);//sf::Style::Fullscreen
     window.setFramerateLimit(60);
@@ -249,7 +261,7 @@ int WinMain()
 
         // Game
 
-        switch (currentGamemode)
+        switch (gameMode)
         {
         case inGame:
             /*for (uint8_t x = 0; x < warps.size(); x++)
@@ -263,9 +275,9 @@ int WinMain()
             if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
             {
                 player.direction = 0;
-                if (map[player.pos.x][player.pos.y - 1].walk == walk)
+                if (map[player.pos.x][player.pos.y - 1].movement == walk)
                 {
-                    currentGamemode = walking;
+                    gameMode = walking;
                     //player.walkOffset.y -= 1;
                     //player.pos.y--;
                 }
@@ -274,27 +286,27 @@ int WinMain()
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))
             {
                 player.direction = 3;
-                if (map[player.pos.x - 1][player.pos.y].walk == walk)
+                if (map[player.pos.x - 1][player.pos.y].movement == walk)
                 {
-                    currentGamemode = walking;
+                    gameMode = walking;
                 }
             }
 
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
             {
                 player.direction = 2;
-                if (map[player.pos.x][player.pos.y + 1].walk == walk)
+                if (map[player.pos.x][player.pos.y + 1].movement == walk)
                 {
-                    currentGamemode = walking;
+                    gameMode = walking;
                 }
             }
 
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
             {
                 player.direction = 1;
-                if (map[player.pos.x + 1][player.pos.y].walk == walk)
+                if (map[player.pos.x + 1][player.pos.y].movement == walk)
                 {
-                    currentGamemode = walking;
+                    gameMode = walking;
                 }
             }
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F1))
@@ -304,6 +316,14 @@ int WinMain()
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F2))
             {
                 warpPlayer(1, { 0, 0 });
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F5))
+            {
+                overlay = none;
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F6))
+            {
+                overlay = movement;
             }
             break;
         case walking:
@@ -343,42 +363,27 @@ int WinMain()
                 break;
             }
             break;
-        }
-
-        /*if (true)
-        {
-            switch (event.key.code)
+        case warpingFadeOut:
+            if (fadeCounter >= 240)
             {
-            case sf::Keyboard::W:
-                player.direction = 0;
-                if (map[player.pos.x][player.pos.y - 1].walk == walk)
-                {
-                    player.pos.y--;
-                }
-                break;
-            case sf::Keyboard::A:
-                player.direction = 3;
-                if (map[player.pos.x - 1][player.pos.y].walk == walk)
-                {
-                    player.pos.x--;
-                }
-                break;
-            case sf::Keyboard::S:
-                player.direction = 2;
-                if (map[player.pos.x][player.pos.y + 1].walk == walk)
-                {
-                    player.pos.y++;
-                }
-                break;
-            case sf::Keyboard::D:
-                player.direction = 1;
-                if (map[player.pos.x + 1][player.pos.y].walk == walk)
-                {
-                    player.pos.x++;
-                }
+                fadeCounter = 255;
+                warpPlayer(warps[mapWarpingTo].newMap, warps[mapWarpingTo].newPos);
+                gameMode = warpingFadeIn;
                 break;
             }
-        }*/
+
+            fadeCounter += 16;
+            break;
+        case warpingFadeIn:
+            if (fadeCounter <= 15)
+            {
+                fadeCounter = 0;
+                gameMode = inGame;
+                break;
+            }
+            fadeCounter -= 16;
+            break;
+        }
 
         // Draw
 
@@ -392,17 +397,35 @@ int WinMain()
         //rectangle.setSize(sf::Vector2f(screenRes.y / 16, screenRes.y / 16));
 
         sprite.setScale((double)screenRes.y / 256, (double)screenRes.y / 256);
+        rectangle.setSize(sf::Vector2f(screenRes.y / 16, screenRes.y / 16));
         for (int8_t x = -1; x < 33; x++)
         {
             for (int8_t y = -1; y < 17; y++)
             {
                 uint16_t image = map[(uint8_t)(x - 16 + player.pos.x)][(uint8_t)(y - 8 + player.pos.y)].image;
-
                 sprite.setTextureRect(sf::Rect<int>((image % 256) % 16 * 16 + (floor((image % 4096) / 256) * 256), floor((image % 256) / 16) * 16 + floor(image / 4096) * 256, 16, 16));
-
+                rectangle.setPosition((x - ((double)player.walkOffset.x / 16))* (screenRes.y / 16) + screenOffset, (y - ((double)player.walkOffset.y / 16))* (screenRes.y / 16));
                 sprite.setPosition((x - ((double)player.walkOffset.x / 16)) * (screenRes.y / 16) + screenOffset, (y - ((double)player.walkOffset.y / 16)) * (screenRes.y / 16));
-
                 window.draw(sprite);
+                switch (overlay)
+                {
+                case movement:
+                    rectangle.setFillColor(sf::Color(255, 255, 0, 127));
+                    switch (map[(uint8_t)(x - 16 + player.pos.x)][(uint8_t)(y - 8 + player.pos.y)].movement)
+                    {
+                    case noWalk:
+                        rectangle.setFillColor(sf::Color(255, 0, 0, 127));
+                        break;
+                    case walk:
+                        rectangle.setFillColor(sf::Color(0, 255, 0, 127));
+                        break;
+                    }
+                    break;
+                }
+                if (overlay != none)
+                {
+                    window.draw(rectangle);
+                }
             }
         }
 
@@ -410,6 +433,14 @@ int WinMain()
         sprite.setTextureRect(sf::Rect<int>((image % 256) % 16 * 16 + (floor((image % 4096) / 256) * 256), floor((image % 256) / 16) * 16 + floor(image / 4096) * 256, 16, 16));
         sprite.setPosition(16 * (screenRes.y / 16) + screenOffset, 8 * (screenRes.y / 16));
         window.draw(sprite);
+
+        if (gameMode == warpingFadeOut || gameMode == warpingFadeIn)
+        {
+            rectangle.setPosition(0, 0);
+            rectangle.setSize((sf::Vector2f)screenRes);
+            rectangle.setFillColor(sf::Color(0, 0, 0, fadeCounter));
+            window.draw(rectangle);
+        }
 
         window.display();
 
