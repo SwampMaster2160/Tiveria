@@ -50,32 +50,36 @@ public:
     MovementPerm movement;
 };
 
-enum Events: uint8_t
+enum Events: uint16_t
 {
-    null = 0, warp = 1
+    null = 0, warp = 1, warpThenMoveDown = 2
 };
 
 class Warp
 {
 public:
+    Events type;
     sf::Vector2<uint8_t> pos;
     uint16_t newMap;
     sf::Vector2<uint8_t> newPos;
 
     Warp()
     {
+        type = warp;
         pos = { 0x00, 0x00 };
         newMap = 0;
         newPos = { 0x00, 0x00 };
     }
 
-    Warp(sf::Vector2<uint8_t> posIn, uint16_t newMapIn, sf::Vector2<uint8_t> newPosIn)
+    Warp(Events typeIn, sf::Vector2<uint8_t> posIn, uint16_t newMapIn, sf::Vector2<uint8_t> newPosIn)
     {
+        type = typeIn;
         pos = posIn;
         newMap = newMapIn;
         newPos = newPosIn;
     }
 };
+Events currentEventType;
 
 std::vector<Warp> warps;
 uint8_t mapWarpingTo;
@@ -127,6 +131,8 @@ void loadMap(uint16_t mapIn)
     uint8_t buffer8[0x10000];
     uint16_t buffer16[0x10000];
 
+    // Header
+
     std::string filePath = mapPath + std::string(".mhd");
     file.open(filePath);
     file.read(buffer8, file.getSize());
@@ -134,6 +140,8 @@ void loadMap(uint16_t mapIn)
     uint8_t height = buffer8[1];
     mapSize = { width, height };
     uint16_t backgroundImage = buffer8[2] + buffer8[3] * 256;
+
+    // Tiles
 
     filePath = mapPath + std::string(".mti");
     file.open(filePath);
@@ -157,6 +165,8 @@ void loadMap(uint16_t mapIn)
         }
     }
 
+    // Movement
+
     filePath = mapPath + std::string(".mmv");
     file.open(filePath);
     file.read(buffer8, file.getSize());
@@ -169,15 +179,49 @@ void loadMap(uint16_t mapIn)
         }
     }
 
+    // Events
+
     filePath = mapPath + std::string(".mev");
     file.open(filePath);
     file.read(buffer8, file.getSize());
     uint8_t eventCount = file.getSize() / 8;
-    warps = std::vector<Warp>(eventCount);
+    uint8_t warpCount = 0;
+
     for (uint8_t x = 0; x < eventCount; x++)
     {
-        warps[x] = Warp({ buffer8[x * 8], buffer8[x * 8 + 1] }, buffer8[x * 8 + 4] + buffer8[x * 8 + 5] * 256, { buffer8[x * 8 + 6], buffer8[x * 8 + 7] });
+        Events eventType = Events(buffer8[x * 8 + 2] + buffer8[x * 8 + 3] * 256);
+        if (eventType == warp | eventType == warpThenMoveDown)
+        {
+            warpCount++;
+        }
+        else
+        {
+            switch (eventType)
+            {
+            case none:
+                break;
+            }
+        }
     }
+
+    warps = std::vector<Warp>(warpCount);
+
+    for (uint8_t x = 0; x < eventCount; x++)
+    {
+        Events eventType = Events(buffer8[x * 8 + 2] + buffer8[x * 8 + 3] * 256);
+        sf::Vector2<uint8_t> eventPos = { buffer8[x * 8], buffer8[x * 8 + 1] };
+        if (eventType == warp | eventType == warpThenMoveDown)
+        {
+            warps[x] = Warp(eventType, eventPos, buffer8[x * 8 + 4] + buffer8[x * 8 + 5] * 256, { buffer8[x * 8 + 6], buffer8[x * 8 + 7] });
+        }
+        switch (eventType)
+        {
+        case none:
+            break;
+        }
+    }
+
+    // Map Connections
 
     filePath = mapPath + std::string(".mcn");
     file.open(filePath);
@@ -523,6 +567,7 @@ int WinMain()
             if (fadeCounter >= 240)
             {
                 fadeCounter = 255;
+                currentEventType = warps[mapWarpingTo].type;
                 warpPlayer(warps[mapWarpingTo].newMap, warps[mapWarpingTo].newPos);
                 gameMode = warpingFadeIn;
                 break;
@@ -535,6 +580,12 @@ int WinMain()
             {
                 fadeCounter = 0;
                 gameMode = inGame;
+                if (currentEventType == warpThenMoveDown)
+                {
+                    player.direction = 2;
+                    gameMode = walking;
+                    player.walkOffset.y = 1;
+                }
                 break;
             }
             fadeCounter -= 16;
