@@ -3,6 +3,11 @@
 sf::RectangleShape rectangle;
 sf::Vector2<uint8_t> mapSize;
 
+sf::Font font;
+sf::Text text;
+
+sf::Vector2<uint16_t> mousePos;
+
 class MapConnection
 {
 public:
@@ -26,22 +31,33 @@ public:
 };
 MapConnection mapConnections[4];
 
-enum Overlay: uint8_t
+enum Overlay : uint8_t
 {
-    none = 0, movement
+    nullOverlay = 0, movement
 };
 Overlay overlay;
 
-enum MovementPerm: uint8_t
+enum ButtonEvent : uint8_t
+{
+    nullButtonEvent = 0, resume, exitGame
+};
+
+enum MovementPerm : uint8_t
 {
     noWalk = 0, walk = 1
 };
 
-enum GameMode: uint8_t
+enum GameMode : uint8_t
 {
-    inGame = 0, walking, warpingFadeOut, warpingFadeIn
+    inGame = 0, walking, warpingFadeOut, warpingFadeIn, menu
 };
 uint8_t fadeCounter;
+
+enum Menu : uint8_t
+{
+    nullMenu = 0, pause
+};
+Menu currentMenu;
 
 class MapTile
 {
@@ -52,7 +68,7 @@ public:
 
 enum Events: uint16_t
 {
-    null = 0, warp = 1, warpThenMoveDown = 2
+    nullEvent = 0, warp = 1, warpThenMoveDown = 2
 };
 
 class Warp
@@ -198,7 +214,7 @@ void loadMap(uint16_t mapIn)
         {
             switch (eventType)
             {
-            case none:
+            case nullOverlay:
                 break;
             }
         }
@@ -216,7 +232,7 @@ void loadMap(uint16_t mapIn)
         }
         switch (eventType)
         {
-        case none:
+        case nullOverlay:
             break;
         }
     }
@@ -422,37 +438,86 @@ void finishWalk()
     }
 }
 
-int WinMain()
+sf::Vector2<uint16_t> getGUIPos(sf::Vector2<int16_t> in)
 {
-    player = NPC(0x0000, {0, 0});
-    gameMode = inGame;
+    return { uint16_t(screenRes.x / 2 + (double)in.x / 256 * screenRes.y), uint16_t(screenRes.y / 2 + (double)in.y / 256 * screenRes.y) };
+}
 
-    for (uint16_t x = 0; x < 256; x++)
+sf::Vector2<uint16_t> getGUISize(sf::Vector2<uint16_t> in)
+{
+    return { uint16_t((double)in.x / 256 * screenRes.y), uint16_t((double)in.y / 256 * screenRes.y) };
+}
+
+uint16_t getGUISize1D(uint16_t in)
+{
+    return uint16_t((double)in / 256 * screenRes.y);
+}
+
+class GUIButton
+{
+public:
+    sf::Vector2<int16_t> pos;
+    sf::Vector2<uint16_t> size;
+    std::string text;
+    ButtonEvent event;
+    bool active;
+
+    GUIButton()
     {
-        for (uint16_t y = 0; y < 256; y++)
-        {
-            map[x][y].image = 0;
-            if (x == y || x == 0 || y == 0)
-            {
-                map[x][y].image = 0;
-            }
-        }
+        pos = { 0, 0 };
+        size = { 1, 1 };
+        text = "Text";
+        event = nullButtonEvent;
+        active = true;
     }
 
-    loadMap(2);
-    player.pos = { 4, 4 };
+    GUIButton(sf::Vector2<int16_t> posIn, sf::Vector2<uint16_t> sizeIn, std::string textIn, ButtonEvent eventIn, bool activeIn)
+    {
+        pos = posIn;
+        size = sizeIn;
+        text = textIn;
+        event = eventIn;
+        active = activeIn;
+    }
+
+    GUIButton(uint8_t posIn, std::string textIn, ButtonEvent eventIn, bool activeIn)
+    {
+        pos = { -64, -100 + posIn * 24 };
+        size = { 128, 16 };
+        text = textIn;
+        event = eventIn;
+        active = activeIn;
+    }
+};
+
+std::vector<GUIButton> GUIButtons;
+
+int WinMain()
+{
+    // Init
 
     sf::RenderWindow window(sf::VideoMode(512, 256), "RPG", sf::Style::Fullscreen);
     window.setFramerateLimit(60);
     window.setVerticalSyncEnabled(true);
     screenRes = sf::Vector2<uint16_t>(window.getSize());
-
     screenAspectRatio = (double)screenRes.x / (double)screenRes.y;
     screenOffset = (screenRes.x - (screenRes.y * 2)) / 2;
 
     textures.loadFromFile("assets/textures/textures.png");
-
     sprite.setTexture(textures);
+
+    font.loadFromFile("C:/Windows/Fonts/arial.ttf");
+    text.setFont(font);
+
+    loadMap(2);
+
+    player = NPC(0x0000, {0, 0});
+    gameMode = inGame;
+    player.pos = { 4, 4 };
+
+    GUIButtons = std::vector<GUIButton>(0);
+
+    // Game Loop
 
     while (window.isOpen())
     {
@@ -471,10 +536,18 @@ int WinMain()
             }
         }
 
+        mousePos = sf::Vector2<uint16_t>(sf::Mouse::getPosition());
+
         switch (gameMode)
         {
         case inGame:
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape))
+            {
+                gameMode = menu;
+                currentMenu = pause;
+            }
+
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
             {
                 player.direction = 0;
                 if (map[player.pos.x][(uint8_t)(player.pos.y - 1)].movement == walk)
@@ -519,7 +592,7 @@ int WinMain()
             }
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F5))
             {
-                overlay = none;
+                overlay = nullOverlay;
             }
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::F6))
             {
@@ -590,6 +663,32 @@ int WinMain()
             }
             fadeCounter -= 16;
             break;
+        case menu:
+            switch (currentMenu)
+            {
+            case pause:
+                GUIButtons = std::vector<GUIButton>(2);
+                GUIButtons[0] = GUIButton(0, "Resume", resume, true);
+                GUIButtons[1] = GUIButton(7, "Exit Game", exitGame, true);
+                break;
+            }
+
+            for (uint8_t x = 0; x < GUIButtons.size(); x++)
+            {
+                if (sf::Mouse::isButtonPressed(sf::Mouse::Left) && GUIButtons[x].active && mousePos.x >= getGUIPos(GUIButtons[x].pos).x && mousePos.y >= getGUIPos(GUIButtons[x].pos).y && mousePos.x < getGUISize(GUIButtons[x].size).x + getGUIPos(GUIButtons[x].pos).x && mousePos.y < getGUISize(GUIButtons[x].size).y + getGUIPos(GUIButtons[x].pos).y)
+                {
+                    switch (GUIButtons[x].event)
+                    {
+                    case resume:
+                        gameMode = inGame;
+                        break;
+                    case exitGame:
+                        window.close();
+                        break;
+                    }
+                }
+            }
+            break;
         }
 
         // Draw
@@ -627,7 +726,7 @@ int WinMain()
                     }
                     break;
                 }
-                if (overlay != none)
+                if (overlay != nullOverlay)
                 {
                     window.draw(rectangle);
                 }
@@ -645,6 +744,36 @@ int WinMain()
             rectangle.setSize((sf::Vector2f)screenRes);
             rectangle.setFillColor(sf::Color(0, 0, 0, fadeCounter));
             window.draw(rectangle);
+        }
+
+        if (gameMode == menu)
+        {
+            rectangle.setPosition((sf::Vector2f)getGUIPos({ -64, -100 }));
+            rectangle.setSize((sf::Vector2f)getGUISize({ 128, 184 }));
+            rectangle.setFillColor(sf::Color::White);
+            window.draw(rectangle);
+
+            for (uint8_t x = 0; x < GUIButtons.size(); x++)
+            {
+                rectangle.setPosition((sf::Vector2f)getGUIPos(GUIButtons[x].pos));
+                rectangle.setSize((sf::Vector2f)getGUISize(GUIButtons[x].size));
+                rectangle.setFillColor(sf::Color::Color(127, 127, 127));
+                if (mousePos.x >= getGUIPos(GUIButtons[x].pos).x && mousePos.y >= getGUIPos(GUIButtons[x].pos).y && mousePos.x < getGUISize(GUIButtons[x].size).x + getGUIPos(GUIButtons[x].pos).x && mousePos.y < getGUISize(GUIButtons[x].size).y + getGUIPos(GUIButtons[x].pos).y)
+                {
+                    rectangle.setFillColor(sf::Color::Color(127, 127, 255));
+                }
+                if (!GUIButtons[x].active)
+                {
+                    rectangle.setFillColor(sf::Color::Color(63, 63, 63));
+                }
+                window.draw(rectangle);
+
+                text.setFillColor(sf::Color::Black);
+                text.setString(GUIButtons[x].text);
+                text.setCharacterSize(getGUISize1D(GUIButtons[x].size.y) / 2);
+                text.setPosition((sf::Vector2f)getGUIPos({ GUIButtons[x].pos.x + GUIButtons[x].size.x / 2 - (int16_t)((double)text.getLocalBounds().width / screenRes.x * 256), GUIButtons[x].pos.y + GUIButtons[x].size.y / 5 }));//(int16_t)((double)text.getLocalBounds().width / screenRes.x * 256)
+                window.draw(text);
+            }
         }
 
         window.display();
