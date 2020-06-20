@@ -8,6 +8,54 @@ sf::Text text;
 
 sf::Vector2<uint16_t> mousePos;
 
+class LangName
+{
+public:
+    std::string lang;
+    std::string dialect;
+    LangName()
+    {
+        lang = "";
+        dialect = "";
+    }
+    LangName(std::string langIn, std::string dialectIn)
+    {
+        lang = langIn;
+        dialect = dialectIn;
+    }
+};
+LangName langName;
+
+class Translation
+{
+public:
+    std::string unlocalized;
+    std::basic_string<wchar_t> translation;
+
+    Translation()
+    {
+
+    }
+
+    Translation(std::string unlocalizedIn, std::basic_string<wchar_t> translationIn)
+    {
+        unlocalized = unlocalizedIn;
+        translation = translationIn;
+    }
+};
+
+class Lang
+{
+public:
+    std::vector<Translation> translations;
+
+    Lang()
+    {
+        translations = std::vector<Translation>();
+    }
+};
+Lang lang;
+
 class MapConnection
 {
 public:
@@ -99,6 +147,78 @@ Events currentEventType;
 
 std::vector<Warp> warps;
 uint8_t mapWarpingTo;
+
+void loadLang(LangName in)
+{
+    langName = in;
+    if (langName.lang != "")
+    {
+        lang = Lang();
+        
+        std::string path = std::string("assets/lang/") + in.lang + std::string("/") + in.dialect + std::string(".lng");
+        sf::FileInputStream file;
+        uint8_t buffer[0x10000];
+        file.open(path);
+        uint64_t fileSize = file.getSize();
+        file.read(buffer, fileSize);
+
+        Translation currentTranslation({"", L""});
+        std::basic_string<wchar_t> currentStringW = L"";
+        std::string currentString = "";
+        char xchar;
+
+        for (uint64_t x = 0; x < fileSize; x++)
+        {
+            xchar = (char)buffer[x];
+
+            switch (xchar)
+            {
+                case '\n':
+                    currentTranslation.translation = currentStringW;
+                    lang.translations.push_back(currentTranslation);
+                    currentStringW = L"";
+                    currentString = "";
+                    currentTranslation = {};
+                    break;
+                case ':':
+                    currentTranslation.unlocalized = (std::string)currentString;
+                    currentStringW = L"";
+                    currentString = "";
+                    x++;
+                    break;
+                default:
+                    if (xchar < 0x80)
+                    {
+                        currentStringW += xchar;
+                        currentString += xchar;
+                    }
+            }
+        }
+    }
+}
+
+std::basic_string<wchar_t> getString(std::string in)
+{
+    uint64_t size = lang.translations.size();
+
+    for (uint64_t x = 0; x < size; x++)
+    {
+        if (in == lang.translations[x].unlocalized)
+        {
+            return lang.translations[x].translation;
+        }
+    }
+
+    size = in.size();
+    std::basic_string<wchar_t> out = L"";
+
+    for (uint64_t x = 0; x < size; x++)
+    {
+        out += in[x];
+    }
+
+    return out;
+}
 
 class NPC
 {
@@ -466,7 +586,7 @@ public:
     {
         pos = { 0, 0 };
         size = { 1, 1 };
-        text = "Text";
+        text = "";
         event = nullButtonEvent;
         active = true;
     }
@@ -514,6 +634,8 @@ int WinMain()
     player = NPC(0x0000, {0, 0});
     gameMode = inGame;
     player.pos = { 4, 4 };
+
+    loadLang({ "en", "nz" });
 
     GUIButtons = std::vector<GUIButton>(0);
 
@@ -668,8 +790,8 @@ int WinMain()
             {
             case pause:
                 GUIButtons = std::vector<GUIButton>(2);
-                GUIButtons[0] = GUIButton(0, "Resume", resume, true);
-                GUIButtons[1] = GUIButton(7, "Exit Game", exitGame, true);
+                GUIButtons[0] = GUIButton(0, "menu.resume", resume, true);
+                GUIButtons[1] = GUIButton(7, "menu.exitGame", exitGame, true);
                 break;
             }
 
@@ -769,7 +891,7 @@ int WinMain()
                 window.draw(rectangle);
 
                 text.setFillColor(sf::Color::Black);
-                text.setString(GUIButtons[x].text);
+                text.setString(getString(GUIButtons[x].text));//GUIButtons[x].text
                 text.setCharacterSize(getGUISize1D(GUIButtons[x].size.y) / 2);
                 text.setPosition((sf::Vector2f)getGUIPos({ GUIButtons[x].pos.x + GUIButtons[x].size.x / 2 - (int16_t)((double)text.getLocalBounds().width / screenRes.x * 256), GUIButtons[x].pos.y + GUIButtons[x].size.y / 5 }));//(int16_t)((double)text.getLocalBounds().width / screenRes.x * 256)
                 window.draw(text);
