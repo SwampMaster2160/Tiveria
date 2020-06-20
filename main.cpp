@@ -165,11 +165,11 @@ void loadLang(LangName in)
         Translation currentTranslation({"", L""});
         std::basic_string<wchar_t> currentStringW = L"";
         std::string currentString = "";
-        char xchar;
+        uint8_t xchar;
 
         for (uint64_t x = 0; x < fileSize; x++)
         {
-            xchar = (char)buffer[x];
+            xchar = buffer[x];
 
             switch (xchar)
             {
@@ -183,7 +183,6 @@ void loadLang(LangName in)
                 case ':':
                     currentTranslation.unlocalized = (std::string)currentString;
                     currentStringW = L"";
-                    currentString = "";
                     x++;
                     break;
                 default:
@@ -191,6 +190,16 @@ void loadLang(LangName in)
                     {
                         currentStringW += xchar;
                         currentString += xchar;
+                    }
+                    else if (xchar < 0xE0)
+                    {
+                        x++;
+                        currentStringW += (xchar - 0xC0) * 0x40 + (buffer[x] - 0x80);
+                    }
+                    else if (xchar < 0xF0)
+                    {
+                        x += 2;
+                        currentStringW += ((xchar - 0xE0) * 0x1000 + (buffer[x - 1] - 0x80) * 0x40 + (buffer[x] - 0x80));
                     }
             }
         }
