@@ -3,10 +3,30 @@
 sf::RectangleShape rectangle;
 sf::Vector2<uint8_t> mapSize;
 
-sf::Font font;
+sf::Font backupFont;
 sf::Text text;
 
 sf::Vector2<uint16_t> mousePos;
+
+class FontPage
+{
+public:
+    bool exists;
+    sf::Texture glyphs;
+    uint8_t widths[0x100];
+
+    FontPage()
+    {
+        exists = false;
+    }
+    FontPage(bool existsIn, sf::Texture glyphsIn, uint8_t widthsIn[0x100])
+    {
+        exists = existsIn;
+        glyphs = glyphsIn;
+        *widths = *widthsIn;
+    }
+};
+FontPage mainFont[0x100];
 
 class LangName
 {
@@ -78,6 +98,11 @@ public:
     }
 };
 MapConnection mapConnections[4];
+
+enum TextAlignment : uint8_t
+{
+    textLeft, textCenter, textRight
+};
 
 enum Overlay : uint8_t
 {
@@ -618,8 +643,40 @@ public:
         active = activeIn;
     }
 };
-
 std::vector<GUIButton> GUIButtons;
+
+class GUIText
+{
+public:
+    sf::Vector2<int16_t> pos;
+    uint16_t size;
+    std::string text;
+
+    GUIText()
+    {
+    }
+
+    GUIText(sf::Vector2<int16_t> posIn, uint16_t sizeIn, std::string textIn)
+    {
+        pos = posIn;
+        size = sizeIn;
+        text = textIn;
+    }
+};
+std::vector<GUIText> GUITexts;
+
+void loadFont()
+{
+    for (uint16_t x = 0; x < 0x100; x++)
+    {
+        std::string path = "assets/textures/font/" + std::to_string(x);
+        mainFont[x].glyphs.loadFromFile(path + ".png");
+
+        sf::FileInputStream file;
+        file.open(path + ".cwt");
+        file.read(mainFont[x].widths, file.getSize());
+    }
+}
 
 int WinMain()
 {
@@ -633,10 +690,12 @@ int WinMain()
     screenOffset = (screenRes.x - (screenRes.y * 2)) / 2;
 
     textures.loadFromFile("assets/textures/textures.png");
-    sprite.setTexture(textures);
+    //sprite.setTexture(textures);
 
-    font.loadFromFile("C:/Windows/Fonts/arial.ttf");
-    text.setFont(font);
+    backupFont.loadFromFile("C:/Windows/Fonts/arial.ttf");
+    text.setFont(backupFont);
+
+    loadFont();
 
     loadMap(2);
 
@@ -647,6 +706,7 @@ int WinMain()
     loadLang({ "en", "nz" });
 
     GUIButtons = std::vector<GUIButton>(0);
+    GUITexts = std::vector<GUIText>(0);
 
     // Game Loop
 
@@ -672,6 +732,8 @@ int WinMain()
         switch (gameMode)
         {
         case inGame:
+            GUITexts = std::vector<GUIText>(0);
+
             if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape))
             {
                 gameMode = menu;
@@ -801,6 +863,10 @@ int WinMain()
                 GUIButtons = std::vector<GUIButton>(2);
                 GUIButtons[0] = GUIButton(0, "menu.resume", resume, true);
                 GUIButtons[1] = GUIButton(7, "menu.exitGame", exitGame, true);
+                //GUIButtons[2] = GUIButton(1, "test.exampleUTF8String", nullButtonEvent, true);
+
+                GUITexts = std::vector<GUIText>(1);
+                GUITexts[0] = GUIText({-128, 112}, 0, "text.version");
                 break;
             }
 
@@ -825,6 +891,8 @@ int WinMain()
         // Draw
 
         window.clear();
+
+        sprite.setTexture(textures);
 
         rectangle.setPosition(0, 0);
         rectangle.setSize((sf::Vector2f)screenRes);
@@ -899,11 +967,66 @@ int WinMain()
                 }
                 window.draw(rectangle);
 
-                text.setFillColor(sf::Color::Black);
-                text.setString(getString(GUIButtons[x].text));//GUIButtons[x].text
+                /*text.setFillColor(sf::Color::Black);
+                text.setString(getString(GUIButtons[x].text));
                 text.setCharacterSize(getGUISize1D(GUIButtons[x].size.y) / 2);
                 text.setPosition((sf::Vector2f)getGUIPos({ GUIButtons[x].pos.x + GUIButtons[x].size.x / 2 - (int16_t)((double)text.getLocalBounds().width / screenRes.x * 256), GUIButtons[x].pos.y + GUIButtons[x].size.y / 5 }));//(int16_t)((double)text.getLocalBounds().width / screenRes.x * 256)
-                window.draw(text);
+                window.draw(text);*/
+
+                //
+
+                uint16_t stringWidth = 0;
+
+                for (uint8_t y = 0; y < getString(GUIButtons[x].text).size(); y++)
+                {
+                    uint16_t charID = getString(GUIButtons[x].text)[y];
+                    stringWidth += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
+                }
+
+                uint16_t xOffset = 0;
+
+                for (uint16_t y = 0; y < getString(GUIButtons[x].text).size(); y++)
+                {
+                    uint16_t charID = getString(GUIButtons[x].text)[y];
+
+                    sprite.setTexture(mainFont[(uint8_t)floor(charID / 256)].glyphs);
+
+                    sprite.setTextureRect({ (uint8_t)charID % 16 * 8, (uint16_t)floor((uint8_t)charID / 16) * 16, 8, 16 });
+                    sprite.setPosition((sf::Vector2f)(getGUIPos(GUIButtons[x].pos) + getGUISize({ (uint16_t)((uint16_t)xOffset + (uint16_t)(GUIButtons[x].size.x / 2) - stringWidth / 2), 0 })));
+                    window.draw(sprite);
+                    xOffset += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
+                }
+            }
+        }
+
+        for (uint8_t x = 0; x < GUITexts.size(); x++)
+        {
+            //rectangle.setFillColor(sf::Color::White);
+            //rectangle.setPosition((sf::Vector2f)getGUIPos({ GUITexts[x].pos.x, GUITexts[x].pos.y }));
+            //rectangle.setSize({ (float)getGUISize1D(GUITexts[x].size), (float)getGUISize1D(GUITexts[x].size) });
+            //window.draw(rectangle);
+
+            uint16_t stringWidth = 0;
+
+            for (uint8_t y = 0; y < getString(GUITexts[x].text).size(); y++)
+            {
+                uint16_t charID = getString(GUITexts[x].text)[y];
+                stringWidth += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
+            }
+
+            uint16_t xOffset = 0;
+
+            for (uint16_t y = 0; y < getString(GUITexts[x].text).size(); y++)//GUITexts[x].text.size()
+            {
+                uint16_t charID = getString(GUITexts[x].text)[y];
+
+                sprite.setTexture(mainFont[(uint8_t)floor(charID / 256)].glyphs);
+
+                sprite.setTextureRect({ (uint8_t)charID % 16 * 8, (uint16_t)floor((uint8_t)charID / 16) * 16, 8, 16 });
+                //sprite.setPosition({ (float)(getGUIPos(GUITexts[x].pos.x, 0).x + xOffset), (float)GUITexts[x].pos.y });
+                sprite.setPosition((sf::Vector2f)(getGUIPos(GUITexts[x].pos) + getGUISize({ xOffset, 0 })));
+                window.draw(sprite);
+                xOffset += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
             }
         }
 
