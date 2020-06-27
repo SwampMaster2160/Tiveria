@@ -112,7 +112,7 @@ Overlay overlay;
 
 enum ButtonEvent : uint8_t
 {
-    nullButtonEvent = 0, resume, exitGame
+    nullButtonEvent = 0, resume, exitGame, stringTest
 };
 
 enum MovementPerm : uint8_t
@@ -128,7 +128,7 @@ uint8_t fadeCounter;
 
 enum Menu : uint8_t
 {
-    nullMenu = 0, pause
+    nullMenu = 0, pause, debugMenu, stringTestMenu
 };
 Menu currentMenu;
 
@@ -651,16 +651,18 @@ public:
     sf::Vector2<int16_t> pos;
     uint16_t size;
     std::string text;
+    TextAlignment alignment;
 
     GUIText()
     {
     }
 
-    GUIText(sf::Vector2<int16_t> posIn, uint16_t sizeIn, std::string textIn)
+    GUIText(sf::Vector2<int16_t> posIn, uint16_t sizeIn, std::string textIn, TextAlignment alignmentIn)
     {
         pos = posIn;
         size = sizeIn;
         text = textIn;
+        alignment = alignmentIn;
     }
 };
 std::vector<GUIText> GUITexts;
@@ -738,6 +740,12 @@ int WinMain()
             {
                 gameMode = menu;
                 currentMenu = pause;
+            }
+
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Home))
+            {
+                gameMode = menu;
+                currentMenu = debugMenu;
             }
 
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
@@ -861,12 +869,28 @@ int WinMain()
             {
             case pause:
                 GUIButtons = std::vector<GUIButton>(2);
-                GUIButtons[0] = GUIButton(0, "menu.resume", resume, true);
-                GUIButtons[1] = GUIButton(7, "menu.exitGame", exitGame, true);
-                //GUIButtons[2] = GUIButton(1, "test.exampleUTF8String", nullButtonEvent, true);
+                GUIButtons[0] = GUIButton(0, "button.resume", resume, true);
+                GUIButtons[1] = GUIButton(7, "button.exitGame", exitGame, true);
+
+                GUITexts = std::vector<GUIText>(2);
+                GUITexts[0] = GUIText({-128, 112}, 0, "text.version", textLeft);
+                GUITexts[1] = GUIText({ 0, -120 }, 0, "menuTitle.paused", textCenter);
+                break;
+            case debugMenu:
+                GUIButtons = std::vector<GUIButton>(2);
+                GUIButtons[0] = GUIButton(0, "button.resume", resume, true);
+                GUIButtons[1] = GUIButton(1, "button.stringTest", stringTest, true);
 
                 GUITexts = std::vector<GUIText>(1);
-                GUITexts[0] = GUIText({-128, 112}, 0, "text.version");
+                GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.debug", textCenter);
+                break;
+            case stringTestMenu:
+                GUIButtons = std::vector<GUIButton>(1);
+                GUIButtons[0] = GUIButton(0, "button.resume", resume, true);
+
+                GUITexts = std::vector<GUIText>(2);
+                GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.stringTest", textCenter);
+                GUITexts[1] = GUIText({ 0, -84 }, 0, "test.exampleUTF8String", textCenter);
                 break;
             }
 
@@ -881,6 +905,9 @@ int WinMain()
                         break;
                     case exitGame:
                         window.close();
+                        break;
+                    case stringTest:
+                        currentMenu = stringTestMenu;
                         break;
                     }
                 }
@@ -1001,10 +1028,6 @@ int WinMain()
 
         for (uint8_t x = 0; x < GUITexts.size(); x++)
         {
-            //rectangle.setFillColor(sf::Color::White);
-            //rectangle.setPosition((sf::Vector2f)getGUIPos({ GUITexts[x].pos.x, GUITexts[x].pos.y }));
-            //rectangle.setSize({ (float)getGUISize1D(GUITexts[x].size), (float)getGUISize1D(GUITexts[x].size) });
-            //window.draw(rectangle);
 
             uint16_t stringWidth = 0;
 
@@ -1012,6 +1035,19 @@ int WinMain()
             {
                 uint16_t charID = getString(GUITexts[x].text)[y];
                 stringWidth += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
+            }
+
+            switch (GUITexts[x].alignment)
+            {
+            case textLeft:
+                stringWidth = 0;
+                break;
+            case textCenter:
+                stringWidth = stringWidth / 2;
+                break;
+            case textRight:
+                stringWidth = stringWidth;
+                break;
             }
 
             uint16_t xOffset = 0;
@@ -1023,8 +1059,7 @@ int WinMain()
                 sprite.setTexture(mainFont[(uint8_t)floor(charID / 256)].glyphs);
 
                 sprite.setTextureRect({ (uint8_t)charID % 16 * 8, (uint16_t)floor((uint8_t)charID / 16) * 16, 8, 16 });
-                //sprite.setPosition({ (float)(getGUIPos(GUITexts[x].pos.x, 0).x + xOffset), (float)GUITexts[x].pos.y });
-                sprite.setPosition((sf::Vector2f)(getGUIPos(GUITexts[x].pos) + getGUISize({ xOffset, 0 })));
+                sprite.setPosition((sf::Vector2f)(getGUIPos(GUITexts[x].pos) + getGUISize({ xOffset, 0 }) - getGUISize({ stringWidth, 0 })));
                 window.draw(sprite);
                 xOffset += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
             }

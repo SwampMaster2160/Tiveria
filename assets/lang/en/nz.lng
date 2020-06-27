@@ -1,5 +1,9 @@
 test.exampleUTF8String: !E~ ¡±¿ÀØÿ ĀōĐǿ Дぎݿ ᴀᴥꞂﻼ Textÿ Àōoa
-menu.resume: Resume
-menu.exitGame: Exit Game
-menu.cancel: Cancel
-text.version: Tiveria Version Alpha 1.1
+button.resume: Resume
+button.exitGame: Exit Game
+button.cancel: Cancel
+button.stringTest: String Test
+menuTitle.paused: Game Paused
+menuTitle.debug: Debug Menu
+menuTitle.stringTest: String Test
+text.version: Tiveria Version Alpha 1.2   Released 27/6/2020
