@@ -872,9 +872,11 @@ int WinMain()
                 GUIButtons[0] = GUIButton(0, "button.resume", resume, true);
                 GUIButtons[1] = GUIButton(7, "button.exitGame", exitGame, true);
 
-                GUITexts = std::vector<GUIText>(2);
-                GUITexts[0] = GUIText({-128, 112}, 0, "text.version", textLeft);
-                GUITexts[1] = GUIText({ 0, -120 }, 0, "menuTitle.paused", textCenter);
+                GUITexts = std::vector<GUIText>(4);
+                GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.paused", textCenter);
+                GUITexts[1] = GUIText({ -128, 88 }, 0, "text.version", textLeft);
+                GUITexts[2] = GUIText({ -128, 100 }, 0, "text.releaseDate", textLeft);
+                GUITexts[3] = GUIText({ -128, 112 }, 0, "text.copyright", textLeft);
                 break;
             case debugMenu:
                 GUIButtons = std::vector<GUIButton>(2);

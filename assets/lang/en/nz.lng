@@ -6,4 +6,6 @@ button.stringTest: String Test
 menuTitle.paused: Game Paused
 menuTitle.debug: Debug Menu
 menuTitle.stringTest: String Test
-text.version: Tiveria Version Alpha 1.2   Released 27/6/2020
+text.version: Tiveria Version Alpha 1.3
+text.releaseDate: Released 28/6/2020
+text.copyright: ©SwampMaster2160, 2020
