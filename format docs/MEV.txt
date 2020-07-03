@@ -1,0 +1,25 @@
+List of events, 8 bytes each.
+
+---Each Event---
+
+$0	Event X
+$1	Event Y
+$2-3	Event Type
+$4-7	Event Type Specific Data
+
+---Events---
+
+$0 - None
+$1 - Warp
+
+---Event Type Specific Data---
+
+-Null-
+
+$4-7	Nothing
+
+-Warp-
+
+$4-5	Warp Map ID
+$6	Warp to X
+$7	Warp to Y
