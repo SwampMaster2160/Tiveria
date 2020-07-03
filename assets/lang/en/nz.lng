@@ -1,11 +1,12 @@
 test.exampleUTF8String: !E~ ¡±¿ÀØÿ ĀōĐǿ Дぎݿ ᴀᴥꞂﻼ Textÿ Àōoa
 button.resume: Resume
 button.exitGame: Exit Game
-button.cancel: Cancel
-button.stringTest: String Test
+button.testsMenu: Tests Menu
+button.boolTest: Boolean Test
+button.back: Back
 menuTitle.paused: Game Paused
 menuTitle.debug: Debug Menu
-menuTitle.stringTest: String Test
-text.version: Tiveria Version Alpha 1.3
-text.releaseDate: Released 28/6/2020
+menuTitle.testsMenu: Tests Menu
+text.version: Tiveria Version Alpha 1.4
+text.releaseDate: Released 3/7/2020
 text.copyright: ©SwampMaster2160, 2020

@@ -8,6 +8,10 @@ sf::Text text;
 
 sf::Vector2<uint16_t> mousePos;
 
+bool exampleBool;
+
+bool mouseButtonPressStarting;
+
 class FontPage
 {
 public:
@@ -18,6 +22,7 @@ public:
     FontPage()
     {
         exists = false;
+
     }
     FontPage(bool existsIn, sf::Texture glyphsIn, uint8_t widthsIn[0x100])
     {
@@ -99,6 +104,11 @@ public:
 };
 MapConnection mapConnections[4];
 
+enum ButtonType : uint8_t
+{
+    regularButton = 0, boolButton
+};
+
 enum TextAlignment : uint8_t
 {
     textLeft, textCenter, textRight
@@ -112,7 +122,7 @@ Overlay overlay;
 
 enum ButtonEvent : uint8_t
 {
-    nullButtonEvent = 0, resume, exitGame, stringTest
+    nullButtonEvent = 0, resume, exitGame, gotoTestsMenu, gotoDebugMenu
 };
 
 enum MovementPerm : uint8_t
@@ -128,7 +138,7 @@ uint8_t fadeCounter;
 
 enum Menu : uint8_t
 {
-    nullMenu = 0, pause, debugMenu, stringTestMenu
+    nullMenu = 0, pause, debugMenu, testsMenu
 };
 Menu currentMenu;
 
@@ -563,7 +573,7 @@ void finishWalk()
 
     for (uint8_t x = 0; x < warps.size(); x++)
     {
-        if (warps[x].pos == player.pos)
+        if (warps[x].pos == player.pos && warps[x].type != warpThenMoveDown)
         {
             gameMode = warpingFadeOut;
             fadeCounter = 0;
@@ -615,6 +625,8 @@ public:
     std::string text;
     ButtonEvent event;
     bool active;
+    ButtonType type;
+    bool* value;
 
     GUIButton()
     {
@@ -623,24 +635,29 @@ public:
         text = "";
         event = nullButtonEvent;
         active = true;
+        type = regularButton;
     }
 
-    GUIButton(sf::Vector2<int16_t> posIn, sf::Vector2<uint16_t> sizeIn, std::string textIn, ButtonEvent eventIn, bool activeIn)
+    GUIButton(sf::Vector2<int16_t> posIn, sf::Vector2<uint16_t> sizeIn, std::string textIn, ButtonEvent eventIn, bool activeIn, ButtonType typeIn, bool* valueIn)
     {
         pos = posIn;
         size = sizeIn;
         text = textIn;
         event = eventIn;
         active = activeIn;
+        type = typeIn;
+        value = valueIn;
     }
 
-    GUIButton(uint8_t posIn, std::string textIn, ButtonEvent eventIn, bool activeIn)
+    GUIButton(uint8_t posIn, std::string textIn, ButtonEvent eventIn, bool activeIn, ButtonType typeIn, bool* valueIn)
     {
         pos = { -64, -100 + posIn * 24 };
         size = { 128, 16 };
         text = textIn;
         event = eventIn;
         active = activeIn;
+        type = typeIn;
+        value = valueIn;
     }
 };
 std::vector<GUIButton> GUIButtons;
@@ -684,6 +701,8 @@ int WinMain()
 {
     // Init
 
+    exampleBool = true;
+
     sf::RenderWindow window(sf::VideoMode(512, 256), "RPG", sf::Style::Fullscreen);
     window.setFramerateLimit(60);
     window.setVerticalSyncEnabled(true);
@@ -692,7 +711,6 @@ int WinMain()
     screenOffset = (screenRes.x - (screenRes.y * 2)) / 2;
 
     textures.loadFromFile("assets/textures/textures.png");
-    //sprite.setTexture(textures);
 
     backupFont.loadFromFile("C:/Windows/Fonts/arial.ttf");
     text.setFont(backupFont);
@@ -715,6 +733,7 @@ int WinMain()
     while (window.isOpen())
     {
         isKeyPressed = false;
+        mouseButtonPressStarting = false;
 
         sf::Event event;
         while (window.pollEvent(event))
@@ -725,6 +744,9 @@ int WinMain()
                 window.close();
                 break;
             case sf::Event::KeyPressed:
+                break;
+            case sf::Event::MouseButtonPressed:
+                mouseButtonPressStarting = true;
                 break;
             }
         }
@@ -772,6 +794,16 @@ int WinMain()
                 if (map[player.pos.x][player.pos.y + 1].movement == walk)
                 {
                     gameMode = walking;
+                }
+
+                for (uint8_t x = 0; x < warps.size(); x++)
+                {
+                    if (warps[x].pos == player.pos && warps[x].type == warpThenMoveDown)
+                    {
+                        gameMode = warpingFadeOut;
+                        fadeCounter = 0;
+                        mapWarpingTo = x;
+                    }
                 }
             }
 
@@ -869,8 +901,8 @@ int WinMain()
             {
             case pause:
                 GUIButtons = std::vector<GUIButton>(2);
-                GUIButtons[0] = GUIButton(0, "button.resume", resume, true);
-                GUIButtons[1] = GUIButton(7, "button.exitGame", exitGame, true);
+                GUIButtons[0] = GUIButton(0, "button.resume", resume, true, regularButton, 0);
+                GUIButtons[1] = GUIButton(7, "button.exitGame", exitGame, true, regularButton, 0);
 
                 GUITexts = std::vector<GUIText>(4);
                 GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.paused", textCenter);
@@ -880,36 +912,48 @@ int WinMain()
                 break;
             case debugMenu:
                 GUIButtons = std::vector<GUIButton>(2);
-                GUIButtons[0] = GUIButton(0, "button.resume", resume, true);
-                GUIButtons[1] = GUIButton(1, "button.stringTest", stringTest, true);
+                GUIButtons[0] = GUIButton(0, "button.resume", resume, true, regularButton, 0);
+                GUIButtons[1] = GUIButton(1, "button.testsMenu", gotoTestsMenu, true, regularButton, 0);
 
                 GUITexts = std::vector<GUIText>(1);
                 GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.debug", textCenter);
                 break;
-            case stringTestMenu:
-                GUIButtons = std::vector<GUIButton>(1);
-                GUIButtons[0] = GUIButton(0, "button.resume", resume, true);
+            case testsMenu:
+                GUIButtons = std::vector<GUIButton>(2);
+                GUIButtons[0] = GUIButton(0, "button.back", gotoDebugMenu, true, regularButton, 0);
+                GUIButtons[1] = GUIButton(2, "button.boolTest", nullButtonEvent, true, boolButton, &exampleBool);
 
                 GUITexts = std::vector<GUIText>(2);
-                GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.stringTest", textCenter);
+                GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.testsMenu", textCenter);
                 GUITexts[1] = GUIText({ 0, -84 }, 0, "test.exampleUTF8String", textCenter);
                 break;
             }
 
             for (uint8_t x = 0; x < GUIButtons.size(); x++)
             {
-                if (sf::Mouse::isButtonPressed(sf::Mouse::Left) && GUIButtons[x].active && mousePos.x >= getGUIPos(GUIButtons[x].pos).x && mousePos.y >= getGUIPos(GUIButtons[x].pos).y && mousePos.x < getGUISize(GUIButtons[x].size).x + getGUIPos(GUIButtons[x].pos).x && mousePos.y < getGUISize(GUIButtons[x].size).y + getGUIPos(GUIButtons[x].pos).y)
+                if (mouseButtonPressStarting && GUIButtons[x].active && mousePos.x >= getGUIPos(GUIButtons[x].pos).x && mousePos.y >= getGUIPos(GUIButtons[x].pos).y && mousePos.x < getGUISize(GUIButtons[x].size).x + getGUIPos(GUIButtons[x].pos).x && mousePos.y < getGUISize(GUIButtons[x].size).y + getGUIPos(GUIButtons[x].pos).y)
                 {
-                    switch (GUIButtons[x].event)
+                    switch (GUIButtons[x].type)
                     {
-                    case resume:
-                        gameMode = inGame;
+                    case regularButton:
+                        switch (GUIButtons[x].event)
+                        {
+                        case resume:
+                            gameMode = inGame;
+                            break;
+                        case exitGame:
+                            window.close();
+                            break;
+                        case gotoTestsMenu:
+                            currentMenu = testsMenu;
+                            break;
+                        case gotoDebugMenu:
+                            currentMenu = debugMenu;
+                            break;
+                        }
                         break;
-                    case exitGame:
-                        window.close();
-                        break;
-                    case stringTest:
-                        currentMenu = stringTestMenu;
+                    case boolButton:
+                        *GUIButtons[x].value = !*GUIButtons[x].value;
                         break;
                     }
                 }
@@ -986,23 +1030,38 @@ int WinMain()
                 rectangle.setPosition((sf::Vector2f)getGUIPos(GUIButtons[x].pos));
                 rectangle.setSize((sf::Vector2f)getGUISize(GUIButtons[x].size));
                 rectangle.setFillColor(sf::Color::Color(127, 127, 127));
-                if (mousePos.x >= getGUIPos(GUIButtons[x].pos).x && mousePos.y >= getGUIPos(GUIButtons[x].pos).y && mousePos.x < getGUISize(GUIButtons[x].size).x + getGUIPos(GUIButtons[x].pos).x && mousePos.y < getGUISize(GUIButtons[x].size).y + getGUIPos(GUIButtons[x].pos).y)
-                {
-                    rectangle.setFillColor(sf::Color::Color(127, 127, 255));
-                }
+                bool mouseInside;
+                mouseInside = (mousePos.x >= getGUIPos(GUIButtons[x].pos).x && mousePos.y >= getGUIPos(GUIButtons[x].pos).y && mousePos.x < getGUISize(GUIButtons[x].size).x + getGUIPos(GUIButtons[x].pos).x && mousePos.y < getGUISize(GUIButtons[x].size).y + getGUIPos(GUIButtons[x].pos).y);
                 if (!GUIButtons[x].active)
                 {
                     rectangle.setFillColor(sf::Color::Color(63, 63, 63));
                 }
+
+                switch (GUIButtons[x].type)
+                {
+                case regularButton:
+                    if (mouseInside)
+                    {
+                        rectangle.setFillColor(sf::Color::Color(127, 127, 255));
+                    }
+                    break;
+                case boolButton:
+                    rectangle.setFillColor(sf::Color::Color(255, 127, 127));
+                    if (*GUIButtons[x].value)
+                    {
+                        rectangle.setFillColor(sf::Color::Color(127, 255, 127));
+                    }
+                    if (mouseInside)
+                    {
+                        rectangle.setFillColor(sf::Color::Color(255, 0, 0));
+                        if (*GUIButtons[x].value)
+                        {
+                            rectangle.setFillColor(sf::Color::Color(0, 255, 0));
+                        }
+                    }
+                    break;
+                }
                 window.draw(rectangle);
-
-                /*text.setFillColor(sf::Color::Black);
-                text.setString(getString(GUIButtons[x].text));
-                text.setCharacterSize(getGUISize1D(GUIButtons[x].size.y) / 2);
-                text.setPosition((sf::Vector2f)getGUIPos({ GUIButtons[x].pos.x + GUIButtons[x].size.x / 2 - (int16_t)((double)text.getLocalBounds().width / screenRes.x * 256), GUIButtons[x].pos.y + GUIButtons[x].size.y / 5 }));//(int16_t)((double)text.getLocalBounds().width / screenRes.x * 256)
-                window.draw(text);*/
-
-                //
 
                 uint16_t stringWidth = 0;
 
