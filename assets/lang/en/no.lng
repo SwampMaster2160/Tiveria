@@ -1,0 +1,17 @@
+language: English
+dialect: None
+exampleUTF8String: !E~ ¡±¿ÀØÿ ĀōĐǿ Дぎݿ ᴀᴥꞂﻼ Textÿ Àōoa
+resume: Resume
+exitGame: Exit Game
+boolTest: Boolean Test
+back: Back
+gamePaused: Game Paused
+debug: Debug
+tests: Tests
+movement: Movement
+version: Tiveria Version Alpha 1.5
+releaseDate: Released 20/7/2020
+copyright: ©SwampMaster2160, 2020
+walkThroughWalls: Walk Through Walls
+disableMapEdgeWarps: Disable Map Edge Warps
+disableOtherMapWarps: Disable Other Map Warps

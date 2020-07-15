@@ -9,6 +9,9 @@ sf::Text text;
 sf::Vector2<uint16_t> mousePos;
 
 bool exampleBool;
+bool allowWalkThroughWalls;
+bool disableMapEdgeWarps;
+bool disableOtherMapWarps;
 
 bool mouseButtonPressStarting;
 
@@ -122,7 +125,7 @@ Overlay overlay;
 
 enum ButtonEvent : uint8_t
 {
-    nullButtonEvent = 0, resume, exitGame, gotoTestsMenu, gotoDebugMenu
+    nullButtonEvent = 0, resume, exitGame, gotoTestsMenu, gotoDebugMenu, gotoMovementDebugMenu
 };
 
 enum MovementPerm : uint8_t
@@ -138,7 +141,7 @@ uint8_t fadeCounter;
 
 enum Menu : uint8_t
 {
-    nullMenu = 0, pause, debugMenu, testsMenu
+    nullMenu = 0, pause, debugMenu, testsMenu, movementDebugMenu
 };
 Menu currentMenu;
 
@@ -573,7 +576,7 @@ void finishWalk()
 
     for (uint8_t x = 0; x < warps.size(); x++)
     {
-        if (warps[x].pos == player.pos && warps[x].type != warpThenMoveDown)
+        if (warps[x].pos == player.pos && warps[x].type != warpThenMoveDown && !disableOtherMapWarps)
         {
             gameMode = warpingFadeOut;
             fadeCounter = 0;
@@ -581,22 +584,22 @@ void finishWalk()
         }
     }
 
-    if (player.pos.y == 255)
+    if (player.pos.y == 255 && !disableMapEdgeWarps)
     {
         warpPlayer(mapConnections[0].mapID, { (uint8_t)(player.pos.x - mapConnections[0].offset), (uint8_t)(mapConnections[0].mapSize.y - 1) });
     }
 
-    if (player.pos.x == mapSize.x)
+    if (player.pos.x == mapSize.x && !disableMapEdgeWarps)
     {
         warpPlayer(mapConnections[1].mapID, {0, (uint8_t)(player.pos.y - mapConnections[1].offset)});
     }
 
-    if (player.pos.y == mapSize.y)
+    if (player.pos.y == mapSize.y && !disableMapEdgeWarps)
     {
         warpPlayer(mapConnections[2].mapID, { (uint8_t)(player.pos.x - mapConnections[2].offset), 0 });
     }
 
-    if (player.pos.x == 255)
+    if (player.pos.x == 255 && !disableMapEdgeWarps)
     {
         warpPlayer(mapConnections[3].mapID, { (uint8_t)(mapConnections[3].mapSize.x - 1), (uint8_t)(player.pos.y - mapConnections[3].offset) });
     }
@@ -702,6 +705,9 @@ int WinMain()
     // Init
 
     exampleBool = true;
+    allowWalkThroughWalls = false;
+    disableMapEdgeWarps = false;
+    disableOtherMapWarps = false;
 
     sf::RenderWindow window(sf::VideoMode(512, 256), "RPG", sf::Style::Fullscreen);
     window.setFramerateLimit(60);
@@ -723,7 +729,7 @@ int WinMain()
     gameMode = inGame;
     player.pos = { 4, 4 };
 
-    loadLang({ "en", "nz" });
+    loadLang({ "en", "no" });
 
     GUIButtons = std::vector<GUIButton>(0);
     GUITexts = std::vector<GUIText>(0);
@@ -773,7 +779,7 @@ int WinMain()
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
             {
                 player.direction = 0;
-                if (map[player.pos.x][(uint8_t)(player.pos.y - 1)].movement == walk)
+                if (map[player.pos.x][(uint8_t)(player.pos.y - 1)].movement == walk || allowWalkThroughWalls)
                 {
                     gameMode = walking;
                 }
@@ -782,7 +788,7 @@ int WinMain()
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))
             {
                 player.direction = 3;
-                if (map[(uint8_t)(player.pos.x - 1)][player.pos.y].movement == walk)
+                if (map[(uint8_t)(player.pos.x - 1)][player.pos.y].movement == walk || allowWalkThroughWalls)
                 {
                     gameMode = walking;
                 }
@@ -791,7 +797,7 @@ int WinMain()
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
             {
                 player.direction = 2;
-                if (map[player.pos.x][player.pos.y + 1].movement == walk)
+                if (map[player.pos.x][player.pos.y + 1].movement == walk || allowWalkThroughWalls)
                 {
                     gameMode = walking;
                 }
@@ -810,7 +816,7 @@ int WinMain()
             else if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
             {
                 player.direction = 1;
-                if (map[player.pos.x + 1][player.pos.y].movement == walk)
+                if (map[player.pos.x + 1][player.pos.y].movement == walk || allowWalkThroughWalls)
                 {
                     gameMode = walking;
                 }
@@ -901,31 +907,42 @@ int WinMain()
             {
             case pause:
                 GUIButtons = std::vector<GUIButton>(2);
-                GUIButtons[0] = GUIButton(0, "button.resume", resume, true, regularButton, 0);
-                GUIButtons[1] = GUIButton(7, "button.exitGame", exitGame, true, regularButton, 0);
+                GUIButtons[0] = GUIButton(0, "resume", resume, true, regularButton, 0);
+                GUIButtons[1] = GUIButton(7, "exitGame", exitGame, true, regularButton, 0);
 
                 GUITexts = std::vector<GUIText>(4);
-                GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.paused", textCenter);
-                GUITexts[1] = GUIText({ -128, 88 }, 0, "text.version", textLeft);
-                GUITexts[2] = GUIText({ -128, 100 }, 0, "text.releaseDate", textLeft);
-                GUITexts[3] = GUIText({ -128, 112 }, 0, "text.copyright", textLeft);
+                GUITexts[0] = GUIText({ 0, -120 }, 0, "gamePaused", textCenter);
+                GUITexts[1] = GUIText({ -128, 88 }, 0, "version", textLeft);
+                GUITexts[2] = GUIText({ -128, 100 }, 0, "releaseDate", textLeft);
+                GUITexts[3] = GUIText({ -128, 112 }, 0, "copyright", textLeft);
                 break;
             case debugMenu:
-                GUIButtons = std::vector<GUIButton>(2);
-                GUIButtons[0] = GUIButton(0, "button.resume", resume, true, regularButton, 0);
-                GUIButtons[1] = GUIButton(1, "button.testsMenu", gotoTestsMenu, true, regularButton, 0);
+                GUIButtons = std::vector<GUIButton>(3);
+                GUIButtons[0] = GUIButton(0, "resume", resume, true, regularButton, 0);
+                GUIButtons[1] = GUIButton(1, "tests", gotoTestsMenu, true, regularButton, 0);
+                GUIButtons[2] = GUIButton(2, "movement", gotoMovementDebugMenu, true, regularButton, 0);
 
                 GUITexts = std::vector<GUIText>(1);
-                GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.debug", textCenter);
+                GUITexts[0] = GUIText({ 0, -120 }, 0, "debug", textCenter);
                 break;
             case testsMenu:
                 GUIButtons = std::vector<GUIButton>(2);
-                GUIButtons[0] = GUIButton(0, "button.back", gotoDebugMenu, true, regularButton, 0);
-                GUIButtons[1] = GUIButton(2, "button.boolTest", nullButtonEvent, true, boolButton, &exampleBool);
+                GUIButtons[0] = GUIButton(0, "back", gotoDebugMenu, true, regularButton, 0);
+                GUIButtons[1] = GUIButton(2, "boolTest", nullButtonEvent, true, boolButton, &exampleBool);
 
                 GUITexts = std::vector<GUIText>(2);
-                GUITexts[0] = GUIText({ 0, -120 }, 0, "menuTitle.testsMenu", textCenter);
-                GUITexts[1] = GUIText({ 0, -84 }, 0, "test.exampleUTF8String", textCenter);
+                GUITexts[0] = GUIText({ 0, -120 }, 0, "testsMenu", textCenter);
+                GUITexts[1] = GUIText({ 0, -84 }, 0, "exampleUTF8String", textCenter);
+                break;
+            case movementDebugMenu:
+                GUIButtons = std::vector<GUIButton>(4);
+                GUIButtons[0] = GUIButton(0, "back", gotoDebugMenu, true, regularButton, 0);
+                GUIButtons[1] = GUIButton(1, "walkThroughWalls", nullButtonEvent, true, boolButton, &allowWalkThroughWalls);
+                GUIButtons[2] = GUIButton(2, "disableMapEdgeWarps", nullButtonEvent, true, boolButton, &disableMapEdgeWarps);
+                GUIButtons[3] = GUIButton(3, "disableOtherMapWarps", nullButtonEvent, true, boolButton, &disableOtherMapWarps);
+
+                GUITexts = std::vector<GUIText>(1);
+                GUITexts[0] = GUIText({ 0, -120 }, 0, "movement", textCenter);
                 break;
             }
 
@@ -949,6 +966,9 @@ int WinMain()
                             break;
                         case gotoDebugMenu:
                             currentMenu = debugMenu;
+                            break;
+                        case gotoMovementDebugMenu:
+                            currentMenu = movementDebugMenu;
                             break;
                         }
                         break;
