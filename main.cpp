@@ -109,7 +109,7 @@ MapConnection mapConnections[4];
 
 enum ButtonType : uint8_t
 {
-    regularButton = 0, boolButton
+    regularButton = 0, boolButton, changeMenuButton
 };
 
 enum TextAlignment : uint8_t
@@ -125,7 +125,7 @@ Overlay overlay;
 
 enum ButtonEvent : uint8_t
 {
-    nullButtonEvent = 0, resume, exitGame, gotoTestsMenu, gotoDebugMenu, gotoMovementDebugMenu
+    nullButtonEvent = 0, resume, exitGame
 };
 
 enum MovementPerm : uint8_t
@@ -139,11 +139,11 @@ enum GameMode : uint8_t
 };
 uint8_t fadeCounter;
 
-enum Menu : uint8_t
+enum MenuEnum : uint8_t
 {
     nullMenu = 0, pause, debugMenu, testsMenu, movementDebugMenu
 };
-Menu currentMenu;
+MenuEnum currentMenu;
 
 class MapTile
 {
@@ -630,6 +630,7 @@ public:
     bool active;
     ButtonType type;
     bool* value;
+    MenuEnum newMenu;
 
     GUIButton()
     {
@@ -639,9 +640,10 @@ public:
         event = nullButtonEvent;
         active = true;
         type = regularButton;
+        newMenu = nullMenu;
     }
 
-    GUIButton(sf::Vector2<int16_t> posIn, sf::Vector2<uint16_t> sizeIn, std::string textIn, ButtonEvent eventIn, bool activeIn, ButtonType typeIn, bool* valueIn)
+    GUIButton(sf::Vector2<int16_t> posIn, sf::Vector2<uint16_t> sizeIn, std::string textIn, ButtonEvent eventIn, bool activeIn, ButtonType typeIn, bool* valueIn, MenuEnum newMenuIn)
     {
         pos = posIn;
         size = sizeIn;
@@ -650,9 +652,10 @@ public:
         active = activeIn;
         type = typeIn;
         value = valueIn;
+        newMenu = newMenuIn;
     }
 
-    GUIButton(uint8_t posIn, std::string textIn, ButtonEvent eventIn, bool activeIn, ButtonType typeIn, bool* valueIn)
+    GUIButton(uint8_t posIn, std::string textIn, ButtonEvent eventIn, bool activeIn, ButtonType typeIn, bool* valueIn, MenuEnum newMenuIn)
     {
         pos = { -64, -100 + posIn * 24 };
         size = { 128, 16 };
@@ -661,6 +664,7 @@ public:
         active = activeIn;
         type = typeIn;
         value = valueIn;
+        newMenu = newMenuIn;
     }
 };
 std::vector<GUIButton> GUIButtons;
@@ -687,8 +691,51 @@ public:
 };
 std::vector<GUIText> GUITexts;
 
-void loadFont()
+class Menu
 {
+public:
+    std::vector<GUIButton> buttons;
+    std::vector<GUIText> texts;
+
+    Menu()
+    {
+        buttons = std::vector<GUIButton>(0);
+        buttons.shrink_to_fit();
+        texts = std::vector<GUIText>(0);
+    }
+
+    Menu(uint8_t buttonsIn, uint8_t textsIn)
+    {
+        buttons = std::vector<GUIButton>(buttonsIn);
+        buttons.shrink_to_fit();
+        texts = std::vector<GUIText>(textsIn);
+    }
+};
+Menu menus[5];
+
+int WinMain()
+{
+    //                                                                                                  ---------- Init ----------
+
+    // --- Create Window ---
+
+    sf::RenderWindow window(sf::VideoMode(512, 256), "RPG", sf::Style::Fullscreen);
+    window.setFramerateLimit(60);
+    window.setVerticalSyncEnabled(true);
+    screenRes = sf::Vector2<uint16_t>(window.getSize());
+    screenAspectRatio = (double)screenRes.x / (double)screenRes.y;
+    screenOffset = (screenRes.x - (screenRes.y * 2)) / 2;
+
+    // --- Load Assets ---
+
+    textures.loadFromFile("assets/textures/textures.png");
+    backupFont.loadFromFile("C:/Windows/Fonts/arial.ttf");
+    text.setFont(backupFont);
+    loadMap(2);
+    loadLang({ "en", "no" });
+
+    // Font
+
     for (uint16_t x = 0; x < 0x100; x++)
     {
         std::string path = "assets/textures/font/" + std::to_string(x);
@@ -698,43 +745,49 @@ void loadFont()
         file.open(path + ".cwt");
         file.read(mainFont[x].widths, file.getSize());
     }
-}
 
-int WinMain()
-{
-    // Init
+    // --- Init Player ---
 
     exampleBool = true;
     allowWalkThroughWalls = false;
     disableMapEdgeWarps = false;
     disableOtherMapWarps = false;
-
-    sf::RenderWindow window(sf::VideoMode(512, 256), "RPG", sf::Style::Fullscreen);
-    window.setFramerateLimit(60);
-    window.setVerticalSyncEnabled(true);
-    screenRes = sf::Vector2<uint16_t>(window.getSize());
-    screenAspectRatio = (double)screenRes.x / (double)screenRes.y;
-    screenOffset = (screenRes.x - (screenRes.y * 2)) / 2;
-
-    textures.loadFromFile("assets/textures/textures.png");
-
-    backupFont.loadFromFile("C:/Windows/Fonts/arial.ttf");
-    text.setFont(backupFont);
-
-    loadFont();
-
-    loadMap(2);
-
     player = NPC(0x0000, {0, 0});
     gameMode = inGame;
     player.pos = { 4, 4 };
 
-    loadLang({ "en", "no" });
+    // --- GUI ---
 
-    GUIButtons = std::vector<GUIButton>(0);
-    GUITexts = std::vector<GUIText>(0);
+    menus[nullMenu] = Menu(0, 0);
 
-    // Game Loop
+    menus[pause] = Menu(2, 4);
+    menus[pause].buttons[0] = GUIButton(0, "resume", resume, true, regularButton, 0, nullMenu);
+    menus[pause].buttons[1] = GUIButton(7, "exitGame", exitGame, true, regularButton, 0, nullMenu);
+    menus[pause].texts[0] = GUIText({ 0, -120 }, 0, "gamePaused", textCenter);
+    menus[pause].texts[1] = GUIText({ -128, 88 }, 0, "version", textLeft);
+    menus[pause].texts[2] = GUIText({ -128, 100 }, 0, "releaseDate", textLeft);
+    menus[pause].texts[3] = GUIText({ -128, 112 }, 0, "copyright", textLeft);
+
+    menus[debugMenu] = Menu(3, 1);
+    menus[debugMenu].buttons[0] = GUIButton(0, "resume", resume, true, regularButton, 0, nullMenu);
+    menus[debugMenu].buttons[1] = GUIButton(1, "tests", nullButtonEvent, true, changeMenuButton, 0, testsMenu);
+    menus[debugMenu].buttons[2] = GUIButton(2, "movement", nullButtonEvent, true, changeMenuButton, 0, movementDebugMenu);
+    menus[debugMenu].texts[0] = GUIText({ 0, -120 }, 0, "debug", textCenter);
+
+    menus[testsMenu] = Menu(2, 2);
+    menus[testsMenu].buttons[0] = GUIButton(0, "back", nullButtonEvent, true, changeMenuButton, 0, debugMenu);
+    menus[testsMenu].buttons[1] = GUIButton(2, "boolTest", nullButtonEvent, true, boolButton, &exampleBool, nullMenu);
+    menus[testsMenu].texts[0] = GUIText({ 0, -120 }, 0, "testsMenu", textCenter);
+    menus[testsMenu].texts[1] = GUIText({ 0, -84 }, 0, "exampleUTF8String", textCenter);
+
+    menus[movementDebugMenu] = Menu(4, 1);
+    menus[movementDebugMenu].buttons[0] = GUIButton(0, "back", nullButtonEvent, true, changeMenuButton, 0, debugMenu);
+    menus[movementDebugMenu].buttons[1] = GUIButton(1, "walkThroughWalls", nullButtonEvent, true, boolButton, &allowWalkThroughWalls, nullMenu);
+    menus[movementDebugMenu].buttons[2] = GUIButton(2, "disableMapEdgeWarps", nullButtonEvent, true, boolButton, &disableMapEdgeWarps, nullMenu);
+    menus[movementDebugMenu].buttons[3] = GUIButton(3, "disableOtherMapWarps", nullButtonEvent, true, boolButton, &disableOtherMapWarps, nullMenu);
+    menus[movementDebugMenu].texts[0] = GUIText({ 0, -120 }, 0, "movement", textCenter);
+
+    //                                                                                                  ---------- Game Loop ----------
 
     while (window.isOpen())
     {
@@ -903,57 +956,14 @@ int WinMain()
             fadeCounter -= 16;
             break;
         case menu:
-            switch (currentMenu)
+            for (uint8_t x = 0; x < menus[currentMenu].buttons.size(); x++)
             {
-            case pause:
-                GUIButtons = std::vector<GUIButton>(2);
-                GUIButtons[0] = GUIButton(0, "resume", resume, true, regularButton, 0);
-                GUIButtons[1] = GUIButton(7, "exitGame", exitGame, true, regularButton, 0);
-
-                GUITexts = std::vector<GUIText>(4);
-                GUITexts[0] = GUIText({ 0, -120 }, 0, "gamePaused", textCenter);
-                GUITexts[1] = GUIText({ -128, 88 }, 0, "version", textLeft);
-                GUITexts[2] = GUIText({ -128, 100 }, 0, "releaseDate", textLeft);
-                GUITexts[3] = GUIText({ -128, 112 }, 0, "copyright", textLeft);
-                break;
-            case debugMenu:
-                GUIButtons = std::vector<GUIButton>(3);
-                GUIButtons[0] = GUIButton(0, "resume", resume, true, regularButton, 0);
-                GUIButtons[1] = GUIButton(1, "tests", gotoTestsMenu, true, regularButton, 0);
-                GUIButtons[2] = GUIButton(2, "movement", gotoMovementDebugMenu, true, regularButton, 0);
-
-                GUITexts = std::vector<GUIText>(1);
-                GUITexts[0] = GUIText({ 0, -120 }, 0, "debug", textCenter);
-                break;
-            case testsMenu:
-                GUIButtons = std::vector<GUIButton>(2);
-                GUIButtons[0] = GUIButton(0, "back", gotoDebugMenu, true, regularButton, 0);
-                GUIButtons[1] = GUIButton(2, "boolTest", nullButtonEvent, true, boolButton, &exampleBool);
-
-                GUITexts = std::vector<GUIText>(2);
-                GUITexts[0] = GUIText({ 0, -120 }, 0, "testsMenu", textCenter);
-                GUITexts[1] = GUIText({ 0, -84 }, 0, "exampleUTF8String", textCenter);
-                break;
-            case movementDebugMenu:
-                GUIButtons = std::vector<GUIButton>(4);
-                GUIButtons[0] = GUIButton(0, "back", gotoDebugMenu, true, regularButton, 0);
-                GUIButtons[1] = GUIButton(1, "walkThroughWalls", nullButtonEvent, true, boolButton, &allowWalkThroughWalls);
-                GUIButtons[2] = GUIButton(2, "disableMapEdgeWarps", nullButtonEvent, true, boolButton, &disableMapEdgeWarps);
-                GUIButtons[3] = GUIButton(3, "disableOtherMapWarps", nullButtonEvent, true, boolButton, &disableOtherMapWarps);
-
-                GUITexts = std::vector<GUIText>(1);
-                GUITexts[0] = GUIText({ 0, -120 }, 0, "movement", textCenter);
-                break;
-            }
-
-            for (uint8_t x = 0; x < GUIButtons.size(); x++)
-            {
-                if (mouseButtonPressStarting && GUIButtons[x].active && mousePos.x >= getGUIPos(GUIButtons[x].pos).x && mousePos.y >= getGUIPos(GUIButtons[x].pos).y && mousePos.x < getGUISize(GUIButtons[x].size).x + getGUIPos(GUIButtons[x].pos).x && mousePos.y < getGUISize(GUIButtons[x].size).y + getGUIPos(GUIButtons[x].pos).y)
+                if (mouseButtonPressStarting && menus[currentMenu].buttons[x].active && mousePos.x >= getGUIPos(menus[currentMenu].buttons[x].pos).x && mousePos.y >= getGUIPos(menus[currentMenu].buttons[x].pos).y && mousePos.x < getGUISize(menus[currentMenu].buttons[x].size).x + getGUIPos(menus[currentMenu].buttons[x].pos).x && mousePos.y < getGUISize(menus[currentMenu].buttons[x].size).y + getGUIPos(menus[currentMenu].buttons[x].pos).y)
                 {
-                    switch (GUIButtons[x].type)
+                    switch (menus[currentMenu].buttons[x].type)
                     {
                     case regularButton:
-                        switch (GUIButtons[x].event)
+                        switch (menus[currentMenu].buttons[x].event)
                         {
                         case resume:
                             gameMode = inGame;
@@ -961,19 +971,13 @@ int WinMain()
                         case exitGame:
                             window.close();
                             break;
-                        case gotoTestsMenu:
-                            currentMenu = testsMenu;
-                            break;
-                        case gotoDebugMenu:
-                            currentMenu = debugMenu;
-                            break;
-                        case gotoMovementDebugMenu:
-                            currentMenu = movementDebugMenu;
-                            break;
                         }
                         break;
+                    case changeMenuButton:
+                        currentMenu = menus[currentMenu].buttons[x].newMenu;
+                        break;
                     case boolButton:
-                        *GUIButtons[x].value = !*GUIButtons[x].value;
+                        *menus[currentMenu].buttons[x].value = !*menus[currentMenu].buttons[x].value;
                         break;
                     }
                 }
@@ -981,7 +985,7 @@ int WinMain()
             break;
         }
 
-        // Draw
+        //                                                                                                  ---------- Draw ----------
 
         window.clear();
 
@@ -1045,19 +1049,19 @@ int WinMain()
             rectangle.setFillColor(sf::Color::White);
             window.draw(rectangle);
 
-            for (uint8_t x = 0; x < GUIButtons.size(); x++)
+            for (uint8_t x = 0; x < menus[currentMenu].buttons.size(); x++)
             {
-                rectangle.setPosition((sf::Vector2f)getGUIPos(GUIButtons[x].pos));
-                rectangle.setSize((sf::Vector2f)getGUISize(GUIButtons[x].size));
+                rectangle.setPosition((sf::Vector2f)getGUIPos(menus[currentMenu].buttons[x].pos));
+                rectangle.setSize((sf::Vector2f)getGUISize(menus[currentMenu].buttons[x].size));
                 rectangle.setFillColor(sf::Color::Color(127, 127, 127));
                 bool mouseInside;
-                mouseInside = (mousePos.x >= getGUIPos(GUIButtons[x].pos).x && mousePos.y >= getGUIPos(GUIButtons[x].pos).y && mousePos.x < getGUISize(GUIButtons[x].size).x + getGUIPos(GUIButtons[x].pos).x && mousePos.y < getGUISize(GUIButtons[x].size).y + getGUIPos(GUIButtons[x].pos).y);
-                if (!GUIButtons[x].active)
+                mouseInside = (mousePos.x >= getGUIPos(menus[currentMenu].buttons[x].pos).x && mousePos.y >= getGUIPos(menus[currentMenu].buttons[x].pos).y && mousePos.x < getGUISize(menus[currentMenu].buttons[x].size).x + getGUIPos(menus[currentMenu].buttons[x].pos).x && mousePos.y < getGUISize(menus[currentMenu].buttons[x].size).y + getGUIPos(menus[currentMenu].buttons[x].pos).y);
+                if (!menus[currentMenu].buttons[x].active)
                 {
                     rectangle.setFillColor(sf::Color::Color(63, 63, 63));
                 }
 
-                switch (GUIButtons[x].type)
+                switch (menus[currentMenu].buttons[x].type)
                 {
                 case regularButton:
                     if (mouseInside)
@@ -1065,16 +1069,22 @@ int WinMain()
                         rectangle.setFillColor(sf::Color::Color(127, 127, 255));
                     }
                     break;
+                case changeMenuButton:
+                    if (mouseInside)
+                    {
+                        rectangle.setFillColor(sf::Color::Color(127, 127, 255));
+                    }
+                    break;
                 case boolButton:
                     rectangle.setFillColor(sf::Color::Color(255, 127, 127));
-                    if (*GUIButtons[x].value)
+                    if (*menus[currentMenu].buttons[x].value)
                     {
                         rectangle.setFillColor(sf::Color::Color(127, 255, 127));
                     }
                     if (mouseInside)
                     {
                         rectangle.setFillColor(sf::Color::Color(255, 0, 0));
-                        if (*GUIButtons[x].value)
+                        if (*menus[currentMenu].buttons[x].value)
                         {
                             rectangle.setFillColor(sf::Color::Color(0, 255, 0));
                         }
@@ -1085,65 +1095,66 @@ int WinMain()
 
                 uint16_t stringWidth = 0;
 
-                for (uint8_t y = 0; y < getString(GUIButtons[x].text).size(); y++)
+                for (uint8_t y = 0; y < getString(menus[currentMenu].buttons[x].text).size(); y++)
                 {
-                    uint16_t charID = getString(GUIButtons[x].text)[y];
+                    uint16_t charID = getString(menus[currentMenu].buttons[x].text)[y];
                     stringWidth += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
                 }
 
                 uint16_t xOffset = 0;
 
-                for (uint16_t y = 0; y < getString(GUIButtons[x].text).size(); y++)
+                for (uint16_t y = 0; y < getString(menus[currentMenu].buttons[x].text).size(); y++)
                 {
-                    uint16_t charID = getString(GUIButtons[x].text)[y];
+                    uint16_t charID = getString(menus[currentMenu].buttons[x].text)[y];
 
                     sprite.setTexture(mainFont[(uint8_t)floor(charID / 256)].glyphs);
 
                     sprite.setTextureRect({ (uint8_t)charID % 16 * 8, (uint16_t)floor((uint8_t)charID / 16) * 16, 8, 16 });
-                    sprite.setPosition((sf::Vector2f)(getGUIPos(GUIButtons[x].pos) + getGUISize({ (uint16_t)((uint16_t)xOffset + (uint16_t)(GUIButtons[x].size.x / 2) - stringWidth / 2), 0 })));
+                    sprite.setPosition((sf::Vector2f)(getGUIPos(menus[currentMenu].buttons[x].pos) + getGUISize({ (uint16_t)((uint16_t)xOffset + (uint16_t)(menus[currentMenu].buttons[x].size.x / 2) - stringWidth / 2), 0 })));
                     window.draw(sprite);
                     xOffset += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
                 }
             }
-        }
 
-        for (uint8_t x = 0; x < GUITexts.size(); x++)
-        {
-
-            uint16_t stringWidth = 0;
-
-            for (uint8_t y = 0; y < getString(GUITexts[x].text).size(); y++)
+            for (uint8_t x = 0; x < menus[currentMenu].texts.size(); x++)
             {
-                uint16_t charID = getString(GUITexts[x].text)[y];
-                stringWidth += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
+
+                uint16_t stringWidth = 0;
+
+                for (uint8_t y = 0; y < getString(menus[currentMenu].texts[x].text).size(); y++)
+                {
+                    uint16_t charID = getString(menus[currentMenu].texts[x].text)[y];
+                    stringWidth += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
+                }
+
+                switch (menus[currentMenu].texts[x].alignment)
+                {
+                case textLeft:
+                    stringWidth = 0;
+                    break;
+                case textCenter:
+                    stringWidth = stringWidth / 2;
+                    break;
+                case textRight:
+                    stringWidth = stringWidth;
+                    break;
+                }
+
+                uint16_t xOffset = 0;
+
+                for (uint16_t y = 0; y < getString(menus[currentMenu].texts[x].text).size(); y++)
+                {
+                    uint16_t charID = getString(menus[currentMenu].texts[x].text)[y];
+
+                    sprite.setTexture(mainFont[(uint8_t)floor(charID / 256)].glyphs);
+
+                    sprite.setTextureRect({ (uint8_t)charID % 16 * 8, (uint16_t)floor((uint8_t)charID / 16) * 16, 8, 16 });
+                    sprite.setPosition((sf::Vector2f)(getGUIPos(menus[currentMenu].texts[x].pos) + getGUISize({ xOffset, 0 }) - getGUISize({ stringWidth, 0 })));
+                    window.draw(sprite);
+                    xOffset += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
+                }
             }
 
-            switch (GUITexts[x].alignment)
-            {
-            case textLeft:
-                stringWidth = 0;
-                break;
-            case textCenter:
-                stringWidth = stringWidth / 2;
-                break;
-            case textRight:
-                stringWidth = stringWidth;
-                break;
-            }
-
-            uint16_t xOffset = 0;
-
-            for (uint16_t y = 0; y < getString(GUITexts[x].text).size(); y++)//GUITexts[x].text.size()
-            {
-                uint16_t charID = getString(GUITexts[x].text)[y];
-
-                sprite.setTexture(mainFont[(uint8_t)floor(charID / 256)].glyphs);
-
-                sprite.setTextureRect({ (uint8_t)charID % 16 * 8, (uint16_t)floor((uint8_t)charID / 16) * 16, 8, 16 });
-                sprite.setPosition((sf::Vector2f)(getGUIPos(GUITexts[x].pos) + getGUISize({ xOffset, 0 }) - getGUISize({ stringWidth, 0 })));
-                window.draw(sprite);
-                xOffset += mainFont[(uint8_t)floor(charID / 256)].widths[charID % 256] + 1;
-            }
         }
 
         window.display();
