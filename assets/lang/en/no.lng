@@ -9,9 +9,15 @@ gamePaused: Game Paused
 debug: Debug
 tests: Tests
 movement: Movement
-version: Tiveria Version Alpha 1.5.1
-releaseDate: Released 16/7/2020
+version: Tiveria Version Alpha 1.6
+releaseDate: Released 17/7/2020
 copyright: ©SwampMaster2160, 2020
 walkThroughWalls: Walk Through Walls
 disableMapEdgeWarps: Disable Map Edge Warps
 disableOtherMapWarps: Disable Other Map Warps
+inventory: Inventory
+multiplicationSign: ×
+redKey: Red Key
+greenKey: Green Key
+blueKey: Blue Key
+yellowKey: Yellow Key

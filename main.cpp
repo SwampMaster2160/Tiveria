@@ -15,6 +15,15 @@ bool disableOtherMapWarps;
 
 bool mouseButtonPressStarting;
 
+const std::string hexDigits[0x10] = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"};
+std::string toHex(uint8_t in)
+{
+    std::string out = hexDigits[(uint8_t)floor(in / 0x10)];
+    out += hexDigits[(uint8_t)(in % 0x10)];
+
+    return out;
+}
+
 class FontPage
 {
 public:
@@ -107,6 +116,11 @@ public:
 };
 MapConnection mapConnections[4];
 
+enum ItemEnum : uint8_t
+{
+    nullItem = 0, redKey, greenKey, blueKey, yellowKey
+};
+
 enum ButtonType : uint8_t
 {
     regularButton = 0, boolButton, changeMenuButton
@@ -125,7 +139,7 @@ Overlay overlay;
 
 enum ButtonEvent : uint8_t
 {
-    nullButtonEvent = 0, resume, exitGame
+    nullButtonEvent = 0, resume, exitGame, gotoInventoryMenu
 };
 
 enum MovementPerm : uint8_t
@@ -141,9 +155,29 @@ uint8_t fadeCounter;
 
 enum MenuEnum : uint8_t
 {
-    nullMenu = 0, pause, debugMenu, testsMenu, movementDebugMenu
+    nullMenu = 0, pausedMenu, debugMenu, testsMenu, movementDebugMenu, inventoryMenu
 };
 MenuEnum currentMenu;
+
+class ItemStack
+{
+public:
+    ItemEnum item;
+    uint8_t stackSize;
+
+    ItemStack()
+    {
+        item = nullItem;
+        stackSize = 0;
+    }
+
+    ItemStack(ItemEnum itemIn, uint8_t stackSizeIn)
+    {
+        item = itemIn;
+        stackSize = stackSizeIn;
+    }
+};
+std::vector<ItemStack> inventory;
 
 class MapTile
 {
@@ -182,6 +216,23 @@ public:
     }
 };
 Events currentEventType;
+
+class Item
+{
+public:
+    std::string name;
+
+    Item()
+    {
+        name = "missingNo";
+    }
+
+    Item(std::string nameIn)
+    {
+        name = nameIn;
+    }
+};
+Item items[5];
 
 std::vector<Warp> warps;
 uint8_t mapWarpingTo;
@@ -310,7 +361,7 @@ GameMode gameMode;
 void loadMap(uint16_t mapIn)
 {
     sf::FileInputStream file;
-    std::string mapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapIn / 256)) + std::string("/") + std::to_string((uint8_t)mapIn % 256);
+    std::string mapPath = std::string("assets/maps/") + toHex((uint8_t)floor(mapIn / 256)) + std::string("/") + toHex((uint8_t)mapIn % 256);
     uint8_t buffer8[0x10000];
     uint16_t buffer16[0x10000];
 
@@ -419,7 +470,7 @@ void loadMap(uint16_t mapIn)
 
     if (mapConnections[1].mapID != 0xFFFF)
     {
-        connectionMapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapConnections[1].mapID / 256)) + std::string("/") + std::to_string((uint8_t)mapConnections[1].mapID % 256);
+        connectionMapPath = std::string("assets/maps/") + toHex((uint8_t)floor(mapConnections[1].mapID / 256)) + std::string("/") + toHex((uint8_t)mapConnections[1].mapID % 256);
         file.open(connectionMapPath + std::string(".mhd"));
         file.read(buffer8, file.getSize());
         uint8_t connectionWidth = buffer8[0];
@@ -454,7 +505,7 @@ void loadMap(uint16_t mapIn)
 
     if (mapConnections[2].mapID != 0xFFFF)
     {
-        connectionMapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapConnections[2].mapID / 256)) + std::string("/") + std::to_string((uint8_t)mapConnections[2].mapID % 256);
+        connectionMapPath = std::string("assets/maps/") + toHex((uint8_t)floor(mapConnections[2].mapID / 256)) + std::string("/") + toHex((uint8_t)mapConnections[2].mapID % 256);
         file.open(connectionMapPath + std::string(".mhd"));
         file.read(buffer8, file.getSize());
         uint8_t connectionWidth = buffer8[0];
@@ -489,7 +540,7 @@ void loadMap(uint16_t mapIn)
 
     if (mapConnections[0].mapID != 0xFFFF)
     {
-        connectionMapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapConnections[0].mapID / 256)) + std::string("/") + std::to_string((uint8_t)mapConnections[0].mapID % 256);
+        connectionMapPath = std::string("assets/maps/") + toHex((uint8_t)floor(mapConnections[0].mapID / 256)) + std::string("/") + toHex((uint8_t)mapConnections[0].mapID % 256);
         file.open(connectionMapPath + std::string(".mhd"));
         file.read(buffer8, file.getSize());
         uint8_t connectionWidth = buffer8[0];
@@ -526,7 +577,7 @@ void loadMap(uint16_t mapIn)
 
     if (mapConnections[3].mapID != 0xFFFF)
     {
-        connectionMapPath = std::string("assets/maps/") + std::to_string((uint8_t)floor(mapConnections[3].mapID / 256)) + std::string("/") + std::to_string((uint8_t)mapConnections[3].mapID % 256);
+        connectionMapPath = std::string("assets/maps/") + toHex((uint8_t)floor(mapConnections[3].mapID / 256)) + std::string("/") + toHex((uint8_t)mapConnections[3].mapID % 256);
         file.open(connectionMapPath + std::string(".mhd"));
         file.read(buffer8, file.getSize());
         uint8_t connectionWidth = buffer8[0];
@@ -711,7 +762,7 @@ public:
         texts = std::vector<GUIText>(textsIn);
     }
 };
-Menu menus[5];
+Menu menus[6];
 
 int WinMain()
 {
@@ -738,7 +789,7 @@ int WinMain()
 
     for (uint16_t x = 0; x < 0x100; x++)
     {
-        std::string path = "assets/textures/font/" + std::to_string(x);
+        std::string path = "assets/textures/font/" + toHex((uint8_t)x);
         mainFont[x].glyphs.loadFromFile(path + ".png");
 
         sf::FileInputStream file;
@@ -760,13 +811,14 @@ int WinMain()
 
     menus[nullMenu] = Menu(0, 0);
 
-    menus[pause] = Menu(2, 4);
-    menus[pause].buttons[0] = GUIButton(0, "resume", resume, true, regularButton, 0, nullMenu);
-    menus[pause].buttons[1] = GUIButton(7, "exitGame", exitGame, true, regularButton, 0, nullMenu);
-    menus[pause].texts[0] = GUIText({ 0, -120 }, 0, "gamePaused", textCenter);
-    menus[pause].texts[1] = GUIText({ -128, 88 }, 0, "version", textLeft);
-    menus[pause].texts[2] = GUIText({ -128, 100 }, 0, "releaseDate", textLeft);
-    menus[pause].texts[3] = GUIText({ -128, 112 }, 0, "copyright", textLeft);
+    menus[pausedMenu] = Menu(3, 4);
+    menus[pausedMenu].buttons[0] = GUIButton(0, "resume", resume, true, regularButton, 0, nullMenu);
+    menus[pausedMenu].buttons[1] = GUIButton(7, "exitGame", exitGame, true, regularButton, 0, nullMenu);
+    menus[pausedMenu].buttons[2] = GUIButton(1, "inventory", gotoInventoryMenu, true, regularButton, 0, nullMenu);
+    menus[pausedMenu].texts[0] = GUIText({ 0, -120 }, 0, "gamePaused", textCenter);
+    menus[pausedMenu].texts[1] = GUIText({ -128, 88 }, 0, "version", textLeft);
+    menus[pausedMenu].texts[2] = GUIText({ -128, 100 }, 0, "releaseDate", textLeft);
+    menus[pausedMenu].texts[3] = GUIText({ -128, 112 }, 0, "copyright", textLeft);
 
     menus[debugMenu] = Menu(3, 1);
     menus[debugMenu].buttons[0] = GUIButton(0, "resume", resume, true, regularButton, 0, nullMenu);
@@ -786,6 +838,24 @@ int WinMain()
     menus[movementDebugMenu].buttons[2] = GUIButton(2, "disableMapEdgeWarps", nullButtonEvent, true, boolButton, &disableMapEdgeWarps, nullMenu);
     menus[movementDebugMenu].buttons[3] = GUIButton(3, "disableOtherMapWarps", nullButtonEvent, true, boolButton, &disableOtherMapWarps, nullMenu);
     menus[movementDebugMenu].texts[0] = GUIText({ 0, -120 }, 0, "movement", textCenter);
+
+    menus[inventoryMenu] = Menu(1, 0);
+    menus[inventoryMenu].buttons[0] = GUIButton(0, "back", nullButtonEvent, true, changeMenuButton, 0, pausedMenu);
+
+    // --- Inventory Items ---
+
+    items[1] = Item("redKey");
+    items[2] = Item("greenKey");
+    items[3] = Item("blueKey");
+    items[4] = Item("yellowKey");
+
+    // --- Inventory ---
+
+    inventory = std::vector<ItemStack>(0);
+    inventory.push_back(ItemStack(blueKey, 5));
+    inventory.push_back(ItemStack(redKey, 69));
+    inventory.push_back(ItemStack(greenKey, 255));
+    inventory.push_back(ItemStack(yellowKey, 0));
 
     //                                                                                                  ---------- Game Loop ----------
 
@@ -820,7 +890,7 @@ int WinMain()
             if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape))
             {
                 gameMode = menu;
-                currentMenu = pause;
+                currentMenu = pausedMenu;
             }
 
             if (sf::Keyboard::isKeyPressed(sf::Keyboard::Home))
@@ -970,6 +1040,19 @@ int WinMain()
                             break;
                         case exitGame:
                             window.close();
+                            break;
+                        case gotoInventoryMenu:
+                            currentMenu = inventoryMenu;
+                            menus[inventoryMenu].texts = std::vector<GUIText>(1);
+                            menus[inventoryMenu].texts[0] = GUIText({ 0, -120 }, 0, "inventory", textCenter);
+
+                            for (uint8_t x = 0; x < inventory.size(); x++)
+                            {
+                                menus[inventoryMenu].texts.push_back(GUIText({ -63, -80 + (x * 15) }, 0, items[inventory[x].item].name, textLeft));
+                                menus[inventoryMenu].texts.push_back(GUIText({ 0, -80 + (x * 15) }, 0, "multiplicationSign", textLeft));
+                                menus[inventoryMenu].texts.push_back(GUIText({ 10, -80 + (x * 15) }, 0, std::to_string(inventory[x].stackSize), textLeft));
+                            }
+
                             break;
                         }
                         break;
