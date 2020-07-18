@@ -8,12 +8,16 @@ sf::Text text;
 
 sf::Vector2<uint16_t> mousePos;
 
+uint16_t currentMap;
+
 bool exampleBool;
 bool allowWalkThroughWalls;
 bool disableMapEdgeWarps;
 bool disableOtherMapWarps;
 
 bool mouseButtonPressStarting;
+
+bool itemsPickedUp[0xFFFF][0xFF];
 
 const std::string hexDigits[0x10] = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"};
 std::string toHex(uint8_t in)
@@ -118,7 +122,7 @@ MapConnection mapConnections[4];
 
 enum ItemEnum : uint8_t
 {
-    nullItem = 0, redKey, greenKey, blueKey, yellowKey
+    nullItem = 0, redKey = 1, greenKey = 2, blueKey = 3, yellowKey = 4
 };
 
 enum ButtonType : uint8_t
@@ -188,7 +192,7 @@ public:
 
 enum Events: uint16_t
 {
-    nullEvent = 0, warp = 1, warpThenMoveDown = 2
+    nullEvent = 0, warp = 1, warpThenMoveDown = 2, groundItem = 3
 };
 
 class Warp
@@ -217,19 +221,51 @@ public:
 };
 Events currentEventType;
 
+class GroundItem
+{
+public:
+    sf::Vector2<uint8_t> pos;
+    ItemEnum item;
+    uint8_t amount;
+    MovementPerm movementAfterPickUp;
+    bool active;
+
+    GroundItem()
+    {
+        pos = { 0x00, 0x00 };
+        item = nullItem;
+        amount = 1;
+        movementAfterPickUp = walk;
+        active = true;
+    }
+
+    GroundItem(sf::Vector2<uint8_t> posIn, ItemEnum itemIn, uint8_t amountIn, MovementPerm movementAfterPickUpIn, bool activeIn)
+    {
+        pos = posIn;
+        item = itemIn;
+        amount = amountIn;
+        movementAfterPickUp = movementAfterPickUpIn;
+        active = activeIn;
+    }
+};
+std::vector<GroundItem> groundItems;
+
 class Item
 {
 public:
     std::string name;
+    uint16_t image;
 
     Item()
     {
         name = "missingNo";
+        image = 0;
     }
 
-    Item(std::string nameIn)
+    Item(std::string nameIn, uint16_t imageIn)
     {
         name = nameIn;
+        image = imageIn;
     }
 };
 Item items[5];
@@ -360,6 +396,8 @@ GameMode gameMode;
 
 void loadMap(uint16_t mapIn)
 {
+    currentMap = mapIn;
+
     sf::FileInputStream file;
     std::string mapPath = std::string("assets/maps/") + toHex((uint8_t)floor(mapIn / 256)) + std::string("/") + toHex((uint8_t)mapIn % 256);
     uint8_t buffer8[0x10000];
@@ -432,13 +470,14 @@ void loadMap(uint16_t mapIn)
         {
             switch (eventType)
             {
-            case nullOverlay:
+            case nullEvent:
                 break;
             }
         }
     }
 
     warps = std::vector<Warp>(warpCount);
+    groundItems = std::vector<GroundItem>(0);
 
     for (uint8_t x = 0; x < eventCount; x++)
     {
@@ -451,6 +490,14 @@ void loadMap(uint16_t mapIn)
         switch (eventType)
         {
         case nullOverlay:
+            break;
+        case groundItem:
+            groundItems.push_back(GroundItem(eventPos, (ItemEnum)buffer8[x * 8 + 4], buffer8[x * 8 + 6], (MovementPerm)buffer8[x * 8 + 7], true));
+            if (itemsPickedUp[currentMap][groundItems.size() - 1])
+            {
+                groundItems[groundItems.size() - 1].active = false;
+                map[groundItems[groundItems.size() - 1].pos.x][groundItems[groundItems.size() - 1].pos.y].movement = groundItems[groundItems.size() - 1].movementAfterPickUp;
+            }
             break;
         }
     }
@@ -764,6 +811,47 @@ public:
 };
 Menu menus[6];
 
+bool obtainItem(ItemEnum in, uint8_t amount)
+{
+    for (uint8_t x = 0; x < inventory.size(); x++)
+    {
+        if (inventory[x].item == in)
+        {
+            if ((uint16_t)inventory[x].stackSize + amount <= 255)
+            {
+                inventory[x].stackSize += amount;
+                return true;
+            }
+            return false;
+        }
+    }
+    if(inventory.size() <= 254)
+    {
+        inventory.push_back(ItemStack(in, amount));
+        return true;
+    }
+    return false;
+}
+
+bool removeItem(ItemEnum in, uint8_t amount)
+{
+    for (uint8_t x = 0; x < inventory.size(); x++)
+    {
+        if (inventory[x].item == in)
+        {
+            if (inventory[x].stackSize >= amount)
+            {
+                inventory[x].stackSize -= amount;
+                if (inventory[x].stackSize == 0)
+                {
+                    inventory.erase(inventory.begin() + x);
+                }
+            }
+        }
+    }
+    return false;
+}
+
 int WinMain()
 {
     //                                                                                                  ---------- Init ----------
@@ -844,18 +932,22 @@ int WinMain()
 
     // --- Inventory Items ---
 
-    items[1] = Item("redKey");
-    items[2] = Item("greenKey");
-    items[3] = Item("blueKey");
-    items[4] = Item("yellowKey");
+    items[1] = Item("redKey", 0x0300);
+    items[2] = Item("greenKey", 0x0301);
+    items[3] = Item("blueKey", 0x0302);
+    items[4] = Item("yellowKey", 0x0303);
 
     // --- Inventory ---
 
     inventory = std::vector<ItemStack>(0);
-    inventory.push_back(ItemStack(blueKey, 5));
-    inventory.push_back(ItemStack(redKey, 69));
-    inventory.push_back(ItemStack(greenKey, 255));
-    inventory.push_back(ItemStack(yellowKey, 0));
+    /*obtainItem(blueKey, 254);
+    obtainItem(redKey, 69);
+    obtainItem(greenKey, 255);
+    obtainItem(yellowKey, 254);
+    obtainItem(yellowKey, 2);
+    obtainItem(blueKey, 1);
+
+    removeItem(redKey, 68);*/
 
     //                                                                                                  ---------- Game Loop ----------
 
@@ -932,6 +1024,39 @@ int WinMain()
                         gameMode = warpingFadeOut;
                         fadeCounter = 0;
                         mapWarpingTo = x;
+                    }
+                }
+            }
+
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Enter))
+            {
+                sf::Vector2<uint8_t> pos;
+                switch (player.direction)
+                {
+                case 0:
+                    pos = { (uint8_t)player.pos.x, (uint8_t)(player.pos.y - 1) };
+                    break;
+                case 1:
+                    pos = { (uint8_t)(player.pos.x + 1), (uint8_t)player.pos.y };
+                    break;
+                case 2:
+                    pos = { (uint8_t)player.pos.x, (uint8_t)(player.pos.y + 1) };
+                    break;
+                case 3:
+                    pos = { (uint8_t)(player.pos.x - 1), (uint8_t)player.pos.y };
+                    break;
+                }
+
+                for (uint8_t x = 0; x < groundItems.size(); x++)
+                {
+                    if (groundItems[x].pos == pos && groundItems[x].active)
+                    {
+                        if (obtainItem(groundItems[x].item, groundItems[x].amount))
+                        {
+                            groundItems[x].active = false;
+                            map[pos.x][pos.y].movement = groundItems[x].movementAfterPickUp;
+                            itemsPickedUp[currentMap][x] = true;
+                        }
                     }
                 }
             }
@@ -1108,6 +1233,16 @@ int WinMain()
                 if (overlay != nullOverlay)
                 {
                     window.draw(rectangle);
+                }
+
+                for (uint8_t z = 0; z < groundItems.size(); z++)
+                {
+                    if (groundItems[z].pos.x == (uint8_t)(x - 16 + player.pos.x) && groundItems[z].pos.y == (uint8_t)(y - 8 + player.pos.y) && groundItems[z].active)
+                    {
+                        image = items[groundItems[z].item].image;
+                        sprite.setTextureRect(sf::Rect<int>((image % 256) % 16 * 16 + (floor((image % 4096) / 256) * 256), floor((image % 256) / 16) * 16 + floor(image / 4096) * 256, 16, 16));
+                        window.draw(sprite);
+                    }
                 }
             }
         }

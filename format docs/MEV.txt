@@ -11,6 +11,8 @@ $4-7	Event Type Specific Data
 
 $0 - None
 $1 - Warp
+$2 - Warp Then Move Down
+$3 - Ground Item
 
 ---Event Type Specific Data---
 
@@ -18,8 +20,14 @@ $1 - Warp
 
 $4-7	Nothing
 
--Warp-
+-Warp/Warp Then Move Down-
 
 $4-5	Warp Map ID
 $6	Warp to X
 $7	Warp to Y
+
+-Ground Item-
+
+$4	Item ID
+$6	Amount
+$7	Movement Perm When Picked Up
